@@ -88,7 +88,9 @@ Run the scrapers in `scrapers/` to populate these files.
 **Scraping limitations and known challenges**
 
 - **Strava top 100 hard limit** — club leaderboard only exposes the top 100 riders per week; athletes ranked below 100 are invisible regardless of activity
-- **Follower scope only** — bike model, activity stats, and profile data are fetched via Strava OAuth for athletes who follow the owner; athletes outside the follow network are invisible to the bot even if they attend club rides
+- **Follower scope only** — bike model, activity stats, and profile data are fetched via Strava OAuth for athletes who follow the owner; athletes outside the follow network appear as attendance-only with no stats or bike data. Best practice: owner proactively follows all regular ride attendees to maximise coverage
+- **Hidden gear** — approximately 10-20% of athletes keep their bikes private on Strava regardless of follow status; these appear without bike data and cannot be scored for upgrade signals
+- **Internal use only** — data is used exclusively for internal club management by the owner; not shared, not sold, not used for automated outreach without owner review. Athletes shared data within Strava's social context — this tool extends that relationship to a business context the owner already has with his members
 - **Playwright session management** — scraping uses browser automation with saved cookies; sessions expire and require periodic re-authentication
 - **Bike data is estimated** — purchase date and source (club vs external) are inferred from profile history, not from real shop transactions; accuracy improves with CRM integration (Phase 2)
 - **Attendance requires club access** — event attendance lists are only visible to club members; the owner's Strava account must be logged in during scraping
@@ -177,6 +179,7 @@ ClubRide.Ai/
 - Athlete profile lookup — full stats, bike, events, service status
 - Off-topic fallback — unrecognised messages return the command menu
 - Privacy layer — personal data in `.env` and `data/` (both gitignored), never in source code
+- **CRM data is synthetic** — bike purchase history, service dates, and purchase source are simulated/inferred from Strava profile data; no real shop transaction data is connected yet
 
 **Not yet automated (manual trigger required):**
 - Friday briefing — works via `briefing` command, not yet auto-sent at 17:00
@@ -191,3 +194,9 @@ ClubRide.Ai/
 - **Multi-sport community profiles** — scrape members across all Strava activity types (running, triathlon, MTB) for a complete engagement picture
 - **Multi-language support** — bot replies in German (DE), French (FR), and Italian (IT) based on owner preference or message language
 - **Recruit engagement drafts** — auto-generate a personalised invitation message for each recruit candidate, ready to send directly from the recruit list
+
+### Phase 3 — Real CRM Integration
+
+- **Real shop CRM** — connect actual purchase history, service records, and transaction data from the bike shop POS system; replaces all synthetic/inferred data with verified facts
+- **Accurate upgrade and service scoring** — signals based on real purchase dates, real service history, and real bike models rather than estimates
+- **Smarter briefing** — owner sees exact km since last real service, exact bike age, exact purchase channel (shop vs external)
