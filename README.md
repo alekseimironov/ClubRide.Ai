@@ -153,4 +153,32 @@ ClubRide.Ai/
 
 ## Status
 
-MVP — Phase 1. Scheduler (auto Friday briefing) and Render deployment are Phase 2.
+### Phase 1 — MVP (current)
+
+**Built and running:**
+- WhatsApp bot live via Twilio — owner can query the club anytime
+- Gemini-powered intent router — understands natural language in any phrasing
+- Full leaderboard from Strava (weekly km, community filter)
+- Upgrade signal — identifies serious riders on a lower-tier bike
+- Service signal — flags bikes overdue for service or chain replacement
+- At-risk detection — regulars absent for 6+ weeks
+- Recruit list — serious local solo riders (Lausanne / Vaud only, confirmed location)
+- Weekend priorities — top 1 upgrade + top 1 service contact with drafted message
+- Draft message generator — ready-to-forward WhatsApp text per athlete, tailored by signal (upgrade / service / ghost), supports custom inline instructions from the owner
+- Athlete profile lookup — full stats, bike, events, service status
+- Off-topic fallback — unrecognised messages return the command menu
+- Privacy layer — personal data in `.env` and `data/` (both gitignored), never in source code
+
+**Not yet automated (manual trigger required):**
+- Friday briefing — works via `briefing` command, not yet auto-sent at 17:00
+- Data scraping — scrapers exist but run manually, not on a schedule
+
+---
+
+### Phase 2 — Production
+
+- **Autoscheduler** — APScheduler to run scrapers weekly/monthly and push Friday briefing automatically at 17:00 CET
+- **Render deployment** — always-on cloud hosting, Twilio webhook pointing at production URL instead of ngrok
+- **Multi-sport community profiles** — scrape members across all Strava activity types (running, triathlon, MTB) for a complete engagement picture
+- **Multi-language support** — bot replies in German (DE), French (FR), and Italian (IT) based on owner preference or message language
+- **Recruit engagement drafts** — auto-generate a personalised invitation message for each recruit candidate, ready to send directly from the recruit list
