@@ -11,6 +11,7 @@ Fixes applied:
   6. Deduplication  — shared _load_leaderboard() used by all lb functions
 """
 
+import os
 import re
 import time
 import unicodedata
@@ -45,10 +46,11 @@ CLUB_FILES = {
 
 _SYNTHETIC_KEYS = {"crm"}
 
-# Athletes permanently excluded from at-risk detection
-# Athletes permanently excluded from ALL bot tools
+# Athletes permanently excluded from ALL bot tools — loaded from .env, never hardcoded
 _EXCLUDED_ATHLETES = {
-    "hassan hosseini",
+    name.strip().lower()
+    for name in os.getenv("EXCLUDED_ATHLETES", "").split(",")
+    if name.strip()
 }
 
 def _paths(club_id: int) -> dict:
