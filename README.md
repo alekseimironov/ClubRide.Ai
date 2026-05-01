@@ -88,7 +88,7 @@ Run the scrapers in `scrapers/` to populate these files.
 **Scraping limitations and known challenges**
 
 - **Strava top 100 hard limit** — club leaderboard only exposes the top 100 riders per week; athletes ranked below 100 are invisible regardless of activity
-- **Public data only** — bot reads public Strava profiles and club pages; private activities and follower-only profiles are not accessible
+- **Follower scope only** — bike model, activity stats, and profile data are fetched via Strava OAuth for athletes who follow the owner; athletes outside the follow network are invisible to the bot even if they attend club rides
 - **Playwright session management** — scraping uses browser automation with saved cookies; sessions expire and require periodic re-authentication
 - **Bike data is estimated** — purchase date and source (club vs external) are inferred from profile history, not from real shop transactions; accuracy improves with CRM integration (Phase 2)
 - **Attendance requires club access** — event attendance lists are only visible to club members; the owner's Strava account must be logged in during scraping
