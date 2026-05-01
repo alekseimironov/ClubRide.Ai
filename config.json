@@ -1,0 +1,41 @@
+{
+  "club": {
+    "name": "TNCE",
+    "full_name": "TNCE",
+    "club_id": 318940,
+    "city": "Lausanne",
+    "country": "Switzerland",
+    "timezone": "Europe/Zurich",
+    "language": "en",
+    "sport": "cycling",
+    "start_date": "2025-06-01",
+    "fallback_lat": 46.5197,
+    "fallback_lon": 6.6323
+  },
+
+  "bike_service": {
+    "service_interval_km": 5000,
+    "chain_replace_km": 2500,
+    "currency": "CHF"
+  },
+
+  "scheduler": {
+    "leaderboard_scrape": "sunday:19:00",
+    "activity_fetch":     "daily:22:00",
+    "friday_briefing":    "friday:17:00",
+    "monday_update":      "monday:08:00"
+  },
+
+  "data": {
+    "real_data_path":      "data/real",
+    "synthetic_data_path": "data/synthetic",
+    "strava_cookies":      "../strava_cookies.json",
+    "strava_token":        "../strava_token.json"
+  },
+
+  "llm": {
+    "model": "gemini-2.5-pro",
+    "max_tokens": 1024,
+    "use_real_data_only": true
+  }
+}

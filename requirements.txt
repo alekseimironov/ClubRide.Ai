@@ -1,0 +1,24 @@
+# Web framework
+flask>=3.0
+
+# Google Gemini
+google-generativeai>=0.7
+
+# WhatsApp / SMS
+twilio>=9.0
+
+# Data
+pandas>=2.0
+requests>=2.31
+
+# Browser automation (leaderboard + event scraping)
+playwright>=1.44
+
+# Scheduler
+apscheduler>=3.10
+
+# Environment variables
+python-dotenv>=1.0
+
+# Weather API (Open-Meteo — no key needed)
+# called directly via requests, no package required

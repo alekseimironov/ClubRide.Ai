@@ -1,0 +1,37 @@
+# ── Credentials & secrets ──────────────────────────
+.env
+strava_cookies.json
+strava_token.json
+
+# ── Data files (never commit raw data) ─────────────
+data/
+*.csv
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Python ─────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# ── OS junk ────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ────────────────────────────────────────────
+.vscode/
+.idea/
+*.code-workspace
+
+# ── Logs & temp ────────────────────────────────────
+*.log
+*.tmp
+ngrok.log
