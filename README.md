@@ -76,14 +76,23 @@ EXCLUDED_ATHLETES=full name to hide,another name
 
 Place CSV files in `data/real/` — the bot expects:
 
-| File | Contents |
-|---|---|
-| `leaderboard_history.csv` | Weekly km per athlete (scraped from Strava) |
-| `historical_attendance_TNCE.csv` | Event attendance records |
-| `athlete_profiles.csv` | Rider tier, bike, speed stats |
-| `athlete_bikes.csv` | Bike model, brand, purchase data |
+| File | Contents | Scraped by | Frequency |
+|---|---|---|---|
+| `leaderboard_history.csv` | Weekly km per athlete | `scrapers/scrape_leaderboard.py` | Weekly — Sunday 19:00 |
+| `historical_attendance_TNCE.csv` | Event attendance records | `scrapers/scrape_events.py` | Weekly |
+| `athlete_profiles.csv` | Rider tier, bike, speed stats | `scrapers/analyse_athletes.py` | Monthly |
+| `athlete_bikes.csv` | Bike model, brand, purchase data | `scrapers/scrape_active_bikes.py` | Monthly |
 
 Run the scrapers in `scrapers/` to populate these files.
+
+**Scraping limitations and known challenges**
+
+- **Strava top 100 hard limit** — club leaderboard only exposes the top 100 riders per week; athletes ranked below 100 are invisible regardless of activity
+- **Public data only** — bot reads public Strava profiles and club pages; private activities and follower-only profiles are not accessible
+- **Playwright session management** — scraping uses browser automation with saved cookies; sessions expire and require periodic re-authentication
+- **Bike data is estimated** — purchase date and source (club vs external) are inferred from profile history, not from real shop transactions; accuracy improves with CRM integration (Phase 2)
+- **Attendance requires club access** — event attendance lists are only visible to club members; the owner's Strava account must be logged in during scraping
+- **No real-time data** — all data is snapshot-based; bot reflects the last scrape, not live Strava state
 
 ### 4. Run locally
 
