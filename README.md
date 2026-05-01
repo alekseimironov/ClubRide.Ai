@@ -78,7 +78,7 @@ Place CSV files in `data/real/` — the bot expects:
 
 | File | Contents | Scraped by | Frequency |
 |---|---|---|---|
-| `leaderboard_history.csv` | Weekly km per athlete | `scrapers/scrape_leaderboard.py` | Weekly — Sunday 19:00 |
+| `leaderboard_history.csv` | Weekly km per athlete | `scrapers/scrape_leaderboard.py` | Twice a week (Wed + Sun) |
 | `historical_attendance_TNCE.csv` | Event attendance records | `scrapers/scrape_events.py` | Weekly |
 | `athlete_profiles.csv` | Rider tier, bike, speed stats | `scrapers/analyse_athletes.py` | Monthly |
 | `athlete_bikes.csv` | Bike model, brand, purchase data | `scrapers/scrape_active_bikes.py` | Monthly |
