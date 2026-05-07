@@ -338,29 +338,37 @@ def scrape_athlete(page, athlete_id: str) -> tuple[dict | None, list[dict]]:
         except Exception:
             pass
 
-        # ── Multi-sport: try clicking cycling tab ───────
+        # ── Multi-sport: click ALL unselected Ride buttons ───────
         if primary_sport != "cyclist":
-            cycling_tab = (
-                page.query_selector("li.sport.cycling a") or
-                page.query_selector("li.sport.cycling")
-            )
-            if cycling_tab:
-                print(f"  Multi-sport ({primary_sport}) — clicking cycling tab")
-                cycling_tab.click()
-                page.wait_for_load_state("networkidle", timeout=15000)
-                time.sleep(2)
-                # Re-scroll and re-read after tab switch
-                for _ in range(6):
-                    page.evaluate("window.scrollBy(0, 600)")
-                    time.sleep(0.4)
-                page.evaluate("window.scrollTo(0, 0)")
-                time.sleep(0.5)
-                body_text = page.inner_text("body")
-                lines     = [l.strip() for l in body_text.split("\n") if l.strip()]
-                multi_sport = True
-            else:
-                print(f"  Primary sport: '{primary_sport}', no cycling tab — skipping")
+            print(f"  Multi-sport ({primary_sport}) — switching all sections to cycling")
+
+            # Click every unselected Ride button — each stat section has its own tab
+            ride_buttons = page.query_selector_all("button[title='Ride']:not(.selected)")
+            print(f"  Found {len(ride_buttons)} unselected Ride button(s)")
+            for btn in ride_buttons:
+                try:
+                    btn.click()
+                    time.sleep(0.5)
+                except Exception:
+                    pass
+
+            if not ride_buttons:
+                print(f"  No Ride buttons found — skipping multi-sport athlete")
                 return None, []
+
+            page.wait_for_load_state("networkidle", timeout=15000)
+            time.sleep(2)
+
+            # Re-scroll to load all sections
+            for _ in range(6):
+                page.evaluate("window.scrollBy(0, 600)")
+                time.sleep(0.4)
+            page.evaluate("window.scrollTo(0, 0)")
+            time.sleep(0.5)
+            body_text = page.inner_text("body")
+            lines     = [l.strip() for l in body_text.split("\n") if l.strip()]
+            multi_sport = True
+            print(f"  All sections switched to cycling")
 
         # ── Location — scan lines after name for City, Country pattern ──
         location = ""
@@ -599,10 +607,25 @@ if __name__ == "__main__":
         if "--self-id" in sys.argv:
             idx     = sys.argv.index("--self-id")
             self_id = sys.argv[idx + 1]
+
+        limit = MAX_PER_SESSION
+        if "--limit" in sys.argv:
+            idx   = sys.argv.index("--limit")
+            limit = int(sys.argv[idx + 1])
+
         ids = fetch_following_ids(self_id)
-        if ids:
-            run(ids)
+
+        # Filter to only unscraped athletes and show what's pending
+        pending = [i for i in ids if not already_scraped(i)]
+        print(f"\n  Already scraped : {len(ids) - len(pending)}")
+        print(f"  Pending         : {len(pending)}")
+        print(f"  This session    : {min(limit, len(pending))} (--limit {limit})")
+
+        if pending:
+            run(pending[:limit])
     else:
         print("Usage:")
+        print("  python scrapers/scrape_followed_athletes.py --athlete ID")
+        print("  python scrapers/scrape_followed_athletes.py --all --limit 5")
         print("  python scrapers/scrape_followed_athletes.py --athlete 33177472")
         print("  python scrapers/scrape_followed_athletes.py --all")

@@ -22,8 +22,8 @@ Purchase date:
   - 25% purchased from Club BSL (flagged, slightly better tier)
 
 Service history:
-  - 40% riders overdue (km_since_service > service_interval)
-  - Chain: 50% overdue
+  - 10% riders overdue (km_since_service > service_interval)
+  - Chain: 15% overdue
 
 Output: data/synthetic/crm.csv
 """
@@ -154,12 +154,12 @@ def generate_service_record(total_km: float, weekly_km: float,
     today = date.today()
     total_km = max(total_km, 1)
 
-    # 40% riders overdue on service
-    overdue = random.random() < 0.40
+    # 10% riders overdue on service (realistic — most riders service regularly)
+    overdue = random.random() < 0.10
     if overdue:
-        km_since_service = round(random.uniform(service_km, service_km * 1.8), 0)
+        km_since_service = round(random.uniform(service_km, service_km * 1.6), 0)
     else:
-        km_since_service = round(random.uniform(0, service_km * 0.80), 0)
+        km_since_service = round(random.uniform(0, service_km * 0.85), 0)
 
     # Back-calculate last service date from km rate
     weekly = max(weekly_km, 10)
@@ -167,12 +167,12 @@ def generate_service_record(total_km: float, weekly_km: float,
     last_service_date = today - timedelta(days=int(weeks_ago * 7))
     last_service_date = max(last_service_date, purchase_date)
 
-    # Chain: 50% overdue
-    chain_overdue = random.random() < 0.50
+    # Chain: 15% overdue (chains wear faster but still replaced regularly)
+    chain_overdue = random.random() < 0.15
     if chain_overdue:
-        km_since_chain = round(random.uniform(chain_km, chain_km * 1.8), 0)
+        km_since_chain = round(random.uniform(chain_km, chain_km * 1.6), 0)
     else:
-        km_since_chain = round(random.uniform(0, chain_km * 0.80), 0)
+        km_since_chain = round(random.uniform(0, chain_km * 0.85), 0)
 
     return {
         "Last_Service_Date": last_service_date.isoformat(),

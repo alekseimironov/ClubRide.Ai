@@ -106,7 +106,8 @@ def run():
 
     for _, evt in att.iterrows():
         raw_names = str(evt.get("Athletes_Names", "") or "")
-        names     = [n.strip() for n in raw_names.split(",") if n.strip()]
+        names     = [n.strip() for n in raw_names.split(",")
+                     if n.strip() and n.strip().lower() != "nan"]
 
         for raw in names:
             profile, match_type = match_name(raw, exact_idx, fuzzy_idx)

@@ -21,7 +21,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from flask import Blueprint, request, make_response
 
-from brain.prompter     import handle
+from brain.prompter      import handle
 from bot.whatsapp_sender import send
 
 ROOT = Path(__file__).parent.parent
@@ -60,7 +60,10 @@ def whatsapp_webhook():
     if not body:
         return _twiml("I received an empty message. Type *help* for commands.")
 
-    # ── Process + reply via TwiML (zero Twilio message credits consumed) ──
+    # ── Instant acknowledgement — reassures owner during long processing ──
+    send(from_number, "_Thinking..._")
+
+    # ── Process + reply via proactive send (independent of Twilio timeout) ──
     try:
         reply = handle(body, owner_id=from_number, club_id=CLUB_ID)
         print(f"  ✅ Reply sent ({len(reply)} chars)")
@@ -68,11 +71,18 @@ def whatsapp_webhook():
         reply = "Sorry, something went wrong. Please try again."
         print(f"  ❌ Error: {e}")
 
-    return _twiml(reply)
+    send(from_number, reply[:1550] if len(reply) > 1550 else reply)
 
+    # Return empty TwiML immediately — reply already sent above
+    return _twiml("")
+
+
+_TWIML_LIMIT = 1550
 
 def _twiml(message: str):
     """Return a TwiML response — does not consume Twilio outbound message credits."""
+    if len(message) > _TWIML_LIMIT:
+        message = message[:_TWIML_LIMIT - 60].rstrip() + "\n\n_...type each command separately for full detail_"
     safe = saxutils.escape(message)
     xml  = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{safe}</Message></Response>'
     resp = make_response(xml)

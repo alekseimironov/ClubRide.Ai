@@ -53,6 +53,13 @@ _EXCLUDED_ATHLETES = {
     if name.strip()
 }
 
+# Community leaders — excluded from loyal members list (they already lead)
+_COMMUNITY_LEADERS = {
+    name.strip().lower()
+    for name in os.getenv("COMMUNITY_LEADERS", "").split(",")
+    if name.strip()
+}
+
 def _paths(club_id: int) -> dict:
     files = CLUB_FILES.get(club_id, CLUB_FILES[318940])
     return {
@@ -94,10 +101,20 @@ def clear_cache():
 
 # ── Fix 1: Name normalisation + fuzzy fallback ────
 def _norm(name: str) -> str:
-    """Strict normalisation: lowercase + strip diacritics."""
+    """Strict normalisation: lowercase + strip diacritics + strip emoji/flag suffixes."""
     name = re.sub(r"\(.*?\)", "", str(name))
+    # Truncate at first emoji/symbol character — removes "🇧🇪 in 🇨🇭" style suffixes entirely
+    truncated = []
+    for c in name:
+        if unicodedata.category(c) in ("So", "Cs", "Co", "Cn"):
+            break
+        truncated.append(c)
+    name = "".join(truncated)
     nfkd = unicodedata.normalize("NFD", name)
-    name = "".join(c for c in nfkd if not unicodedata.combining(c))
+    name = "".join(
+        c for c in nfkd
+        if unicodedata.category(c) in ("Ll", "Lu", "Mn", "Zs") or c in ("-", "'")
+    )
     return re.sub(r"\s+", " ", name).strip().lower()
 
 def _fuzzy_norm(name: str) -> tuple[str, str]:
@@ -167,8 +184,9 @@ def get_leaderboard(club_id: int, week: int = None,
     df = (df.sort_values("Snapshot_Date", ascending=False)
             .groupby("Athlete").first()
             .reset_index()
-            .sort_values("Distance_km", ascending=False)
-            .head(top_n))
+            .sort_values("Distance_km", ascending=False))
+    df = df[~df["Athlete"].apply(lambda n: _norm(str(n))).isin(_EXCLUDED_ATHLETES)]
+    df = df.head(top_n)
 
     return {
         "week":      int(df["Week_Number"].iloc[0]),
@@ -269,6 +287,7 @@ def get_service_alerts(club_id: int, limit: int = 10) -> dict:
         return {"athletes": [], "total_due": 0, "data_source": "synthetic"}
 
     due = df[df["Service_Due"].str.lower() == "true"].copy()
+    due = due[~due["Athlete"].apply(lambda n: _norm(str(n))).isin(_EXCLUDED_ATHLETES)]
     due["Km_Since_Service"] = pd.to_numeric(due["Km_Since_Service"], errors="coerce")
     due["Total_Est_Km"]     = pd.to_numeric(due["Total_Est_Km"],     errors="coerce")
     due = due.sort_values("Km_Since_Service", ascending=False).head(limit)
@@ -289,6 +308,7 @@ def get_chain_alerts(club_id: int, limit: int = 10) -> dict:
         return {"athletes": [], "total_due": 0, "data_source": "synthetic"}
 
     due = df[df["Chain_Due"].str.lower() == "true"].copy()
+    due = due[~due["Athlete"].apply(lambda n: _norm(str(n))).isin(_EXCLUDED_ATHLETES)]
     due["Km_Since_Chain"] = pd.to_numeric(due["Km_Since_Chain"], errors="coerce")
     due = due.sort_values("Km_Since_Chain", ascending=False).head(limit)
 
@@ -454,6 +474,33 @@ def get_athlete_profile(club_id: int, athlete_name: str) -> dict:
     enr_df  = _load_csv(p["enriched"])
     crm_df  = _load_csv(p["crm"])
 
+    if _norm(athlete_name) in _EXCLUDED_ATHLETES:
+        return {"athlete": athlete_name, "found": False, "data_quality": "none"}
+
+    # ── Disambiguation — detect multiple matches before proceeding ────────────
+    candidates = []
+    if not prof_df.empty:
+        mask = _match_athlete(athlete_name, prof_df["Name"])
+        if mask.sum() > 1:
+            names = prof_df[mask]["Name"].tolist()
+            candidates.extend(names)
+    if not candidates and not enr_df.empty:
+        mask = _match_athlete(athlete_name, enr_df["Athlete_Raw"].dropna())
+        if mask.sum() > 1:
+            seen = []
+            for n in enr_df[mask]["Athlete_Raw"].tolist():
+                if _norm(n) not in [_norm(x) for x in seen]:
+                    seen.append(n)
+            if len(seen) > 1:
+                candidates = seen
+    if candidates:
+        return {
+            "athlete":   athlete_name,
+            "found":     False,
+            "data_quality": "ambiguous",
+            "matches":   candidates[:6],
+        }
+
     result = {"athlete": athlete_name, "found": False, "data_quality": "none"}
 
     # 1 — profile match (real Strava data)
@@ -615,7 +662,8 @@ def get_upgrade_candidates(club_id: int, limit: int = 10) -> dict:
 
         is_candidate = (
             (rider_tier == "top" and primary_tier in ("mid", "entry", "unknown")) or
-            (rider_tier == "mid" and primary_tier == "entry")
+            (rider_tier == "mid" and primary_tier == "entry") or
+            (primary_bike_km >= 25_000 and primary_tier not in ("top", "unknown"))  # high mileage on mid/entry bike
         )
         if not is_candidate:
             continue
@@ -744,6 +792,84 @@ def get_at_risk_members(club_id: int,
     return {"at_risk": at_risk, "total": len(at_risk)}
 
 
+def get_loyal_members(club_id: int, limit: int = 5, min_events: int = 5) -> dict:
+    """
+    Top community members by events attended — still actively showing up.
+    Enriched with profile data where available.
+    Used for: community leader identification, promotional sales targets.
+    """
+    from datetime import timedelta
+
+    p      = _paths(club_id)
+    enr_df = _load_csv(p["enriched"])
+    prof_df = _load_csv(p["profiles"])
+
+    if enr_df.empty:
+        return {"loyal": [], "total": 0}
+
+    enr_df["_date"] = pd.to_datetime(enr_df["Date"], format="mixed",
+                                      dayfirst=False, errors="coerce")
+    cutoff = pd.Timestamp(date.today() - timedelta(weeks=6))
+
+    # Count events per athlete
+    seen = {}
+    for _, row in enr_df.dropna(subset=["_date"]).iterrows():
+        raw = str(row.get("Athlete_Raw", "")).strip()
+        if not raw or raw.lower() == "nan":
+            continue
+        key = _norm(raw)
+        if key in _EXCLUDED_ATHLETES or key in _COMMUNITY_LEADERS:
+            continue
+        if key not in seen:
+            seen[key] = {"name": raw, "events": set(), "last": row["_date"]}
+        seen[key]["events"].add(row.get("Event_ID", str(row["_date"].date())))
+        seen[key]["last"] = max(seen[key]["last"], row["_date"])
+
+    # Build profile lookup
+    prof_lookup = {}
+    if not prof_df.empty:
+        prof_df["CurrYear_km"] = pd.to_numeric(prof_df["CurrYear_km"], errors="coerce").fillna(0)
+        for _, r in prof_df.iterrows():
+            prof_lookup[_norm(str(r["Name"]))] = r
+
+    # Also try fuzzy match for profiles
+    results = []
+    for key, s in seen.items():
+        count = len(s["events"])
+        if count < min_events:
+            continue
+        # Must still be active — seen within last 6 weeks
+        if s["last"] < cutoff:
+            continue
+
+        profile = prof_lookup.get(key)
+        if profile is None:
+            for pk, pv in prof_lookup.items():
+                fn1, i1 = _fuzzy_norm(key)
+                fn2, i2 = _fuzzy_norm(pk)
+                if fn1 == fn2 and i1 == i2:
+                    profile = pv
+                    break
+
+        weekly_km    = float(profile["Weekly_km"])      if profile is not None else 0
+        curr_year_km = float(profile["CurrYear_km"])    if profile is not None else 0
+        rider_tier   = str(profile.get("rider_tier", "")) if profile is not None else ""
+        primary_bike = str(profile.get("primary_bike", "")) if profile is not None else ""
+        primary_bike = "" if primary_bike in ("nan", "unknown") else primary_bike
+
+        results.append({
+            "name":         s["name"],
+            "events":       count,
+            "weekly_km":    weekly_km,
+            "curr_year_km": curr_year_km,
+            "rider_tier":   rider_tier,
+            "primary_bike": primary_bike,
+        })
+
+    results.sort(key=lambda x: (-x["events"], -x["weekly_km"]))
+    return {"loyal": results[:limit], "total": len(results)}
+
+
 def get_week_attendees(club_id: int, week: int, year: int) -> dict:
     """
     Returns past and future attendees for a given ISO week.
@@ -817,6 +943,9 @@ def get_potential_recruits(club_id: int, limit: int = 10,
         if weekly_km < min_weekly_km:
             continue
 
+        if _norm(name) in _EXCLUDED_ATHLETES:
+            continue
+
         # Local only — require confirmed Lausanne / Vaud location; skip if missing
         location = str(row.get("Location", "") or "")
         if not location or location in ("nan", "") or not _is_local(location):
@@ -865,6 +994,7 @@ def get_weekend_priorities(club_id: int) -> dict:
         crm_df["Km_Since_Service"] = pd.to_numeric(
             crm_df["Km_Since_Service"], errors="coerce").fillna(0)
         due = crm_df[crm_df["Service_Due"].str.lower() == "true"].copy()
+        due = due[~due["Athlete"].apply(lambda n: _norm(str(n))).isin(_EXCLUDED_ATHLETES)]
         due = due.sort_values("Km_Since_Service", ascending=False)
         if not due.empty:
             r = due.iloc[0]

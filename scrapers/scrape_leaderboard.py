@@ -125,7 +125,8 @@ def goto_with_retry(page, url, retries=3, timeout=45000):
 
 
 # ── Main scrape ────────────────────────────────────
-def scrape():
+def scrape(force_last_week: bool = False):
+    _force_last_week = force_last_week
     print(f"\n{'='*60}")
     print(f" Leaderboard snapshot  {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}")
@@ -171,8 +172,8 @@ def scrape():
         print(f"   {len(rows)} athletes")
         all_rows.extend(rows)
 
-        # ── Last Week (Sundays only — final snapshot) ──
-        if is_sunday():
+        # ── Last Week (Sundays only — or forced with --last-week) ──
+        if is_sunday() or _force_last_week:
             year_lw, week_lw = week_info(offset=1)
             print(f"\n Last Week  W{week_lw} {year_lw}  [Sunday final snapshot]")
             btn = page.query_selector(
@@ -221,9 +222,17 @@ def scrape():
         .assign(
             Year=lambda d: pd.to_numeric(d["Year"], errors="coerce").astype("Int64"),
             Week_Number=lambda d: pd.to_numeric(d["Week_Number"], errors="coerce").astype("Int64"),
+            Distance_km=lambda d: pd.to_numeric(d["Distance_km"], errors="coerce"),
             Rank=lambda d: pd.to_numeric(d["Rank"], errors="coerce").astype("Int64"),
         )
-        .sort_values(["Year", "Week_Number", "Snapshot_Date", "Rank"])
+    )
+
+    # Keep only the best snapshot per athlete per week (highest Distance_km = latest/final result)
+    final = (
+        final
+        .sort_values("Distance_km", ascending=False)
+        .drop_duplicates(subset=["Year", "Week_Number", "Athlete"], keep="first")
+        .sort_values(["Year", "Week_Number", "Rank"])
         .reset_index(drop=True)
     )
 
@@ -249,11 +258,14 @@ def scrape():
 
 # ── Entry point ────────────────────────────────────
 if __name__ == "__main__":
-    if "--now" in sys.argv:
-        scrape()
+    _force_last_week = "--last-week" in sys.argv
+
+    if "--now" in sys.argv or _force_last_week:
+        scrape(force_last_week=_force_last_week)
     else:
         print("  Scheduler active  runs daily at 22:00")
         print("   Tip: python scrapers/scrape_leaderboard.py --now")
+        print("   Tip: python scrapers/scrape_leaderboard.py --last-week  (backfill missed week)")
         schedule.every().day.at("22:00").do(scrape)
         while True:
             schedule.run_pending()

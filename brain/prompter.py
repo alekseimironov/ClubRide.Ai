@@ -11,7 +11,9 @@ No keywords. No regex. Any language, any phrasing.
 """
 
 import os
-from datetime import date
+import json
+import requests
+from datetime import date, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -29,6 +31,7 @@ from .retriever import (
 from .scorer import get_service_due, get_ghosts
 from .session import get_history, add_turn
 from .feedback import log_action, build_alert
+from privacy_gate.masker import build_anonymiser
 
 ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
@@ -195,6 +198,24 @@ _TOOLS = types.Tool(function_declarations=[
     ),
 
     types.FunctionDeclaration(
+        name="get_loyal_members",
+        description=(
+            "Top community members by events attended — still actively showing up. "
+            "Shows rides together, 2026 km, and bike. Useful for identifying community "
+            "leaders and promotional sales targets. "
+            "Use for: 'loyal', 'top members', 'best attendees', 'community leaders', "
+            "'most active members', 'who comes most'."
+        ),
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "limit": types.Schema(type=types.Type.INTEGER,
+                                      description="Max results. Default 10.")
+            }
+        )
+    ),
+
+    types.FunctionDeclaration(
         name="show_help",
         description=(
             "Show the command menu. Use this when the message is off-topic, "
@@ -222,7 +243,8 @@ Tool selection rules (apply in order, stop at first match):
 6. Asks about inactive, missing, or ghost members → get_at_risk_members
 7. Asks who to contact or priorities for this weekend → get_weekend_priorities
 8. Asks about recruiting solo riders → get_potential_recruits
-9. Explicitly says "briefing", "weekly report", "résumé", or "full report" → get_briefing
+9. Asks about loyal members, top attendees, most active, community leaders → get_loyal_members
+10. Explicitly says "briefing", "weekly report", "résumé", or "full report" → get_briefing
 10. Anything else — off-topic, unclear, general question, chitchat, member list requests → show_help
 
 get_briefing is NOT a member directory. Never use it to answer "list of members" or "full list" requests.
@@ -236,20 +258,23 @@ Highlight the most important insight: upgrade opportunity, service need, or loya
 If data_quality is 'attendance_only', mention that full profile is not yet available.
 Never invent numbers — use only the data provided."""
 
-_DRAFT_SYSTEM = """You are ClubRide.Ai helping a cycling club owner draft a short WhatsApp message to send directly to an athlete.
+_DRAFT_SYSTEM = """You are helping a cycling club owner write a short, natural WhatsApp message to one of their athletes.
 
-Rules:
-- English only
-- 2-3 sentences maximum, conversational tone
-- Warm and personal, not salesy or pushy
+Style:
+- Warm, genuine, friendly — like a message from someone who actually knows them
+- 2 sentences maximum. No fluff, no corporate tone
 - Start with "Hey [FirstName],"
-- Never mention the owner's name or ClubRide.Ai
-- Always end with a clear call to action:
-  * upgrade → invite them to come see new bikes in the shop
-  * service → ask them to book the bike in
-  * ghost → low-pressure personal invite: coffee at the shop, no obligation
-  * engagement → open-ended invitation to stop by
-- If the owner's note contains extra instructions (specific bike model, event, discount, etc.), honour them and weave them naturally into the message"""
+- Never mention ClubRide.Ai or the owner's name
+- Sound like the owner noticed something specific, not like a mass message
+
+Content:
+- Weave in exactly ONE key number from the data provided (marked as "Key number") — mention it naturally, not robotically
+- End with a single clear, low-pressure call to action:
+  * upgrade → come by to see new bikes ("worth a look", "pop by")
+  * service → book the bike in ("before it gets worse", "before summer")
+  * ghost → coffee at the shop, no pressure ("whenever you're free")
+  * engagement → open invitation to stop by
+- If the owner's note has extra instructions, honour them naturally"""
 
 
 # ── Formatters (deterministic, zero Gemini) ────────────────────────────────────
@@ -275,8 +300,11 @@ def _fmt_leaderboard(club_id: int, top_n: int = 10) -> str:
         for name in enr_df["Matched_Name"].dropna():
             community_norms.add(_norm(str(name)))
 
-    # Filter to community members only
-    community = [a for a in athletes if _norm(a["Athlete"]) in community_norms]
+    # Filter to community members only, excluding privacy-flagged athletes
+    from .retriever import _EXCLUDED_ATHLETES
+    community = [a for a in athletes
+                 if _norm(a["Athlete"]) in community_norms
+                 and _norm(a["Athlete"]) not in _EXCLUDED_ATHLETES]
     shown     = community[:top_n]
 
     # This week's event attendance — past and future
@@ -322,29 +350,37 @@ def _fmt_leaderboard(club_id: int, top_n: int = 10) -> str:
 
 
 def _fmt_service(club_id: int, alert_type: str = "service") -> str:
-    if alert_type == "chain":
+    sections = []
+
+    # ── Service due ──────────────────────────────────
+    if alert_type in ("service", "both"):
+        alerts = get_service_due(club_id, limit=10)
+        if alerts:
+            lines = [f"Service Due ({len(alerts)}) *[estimated data]*\n"]
+            for a in alerts:
+                km       = float(a.get("Km_Since_Service", 0) or 0)
+                bike     = a.get("Bike_Model") or a.get("Bike_Brand") or "unknown"
+                last     = str(a.get("Last_Service_Date", "") or "")
+                last_str = f" · last: {last[:7]}" if last and last != "nan" else ""
+                lines.append(f"• {a['Athlete']} — {km:,.0f}km since service{last_str} · {bike}")
+            sections.append("\n".join(lines))
+
+    # ── Chain due ────────────────────────────────────
+    if alert_type in ("chain", "both", "service"):
         data     = get_chain_alerts(club_id, limit=10)
         athletes = data.get("athletes", [])
-        if not athletes:
-            return "No chain replacement alerts."
-        lines = [f"Chain Due ({len(athletes)} athletes)\n"]
-        for a in athletes:
-            km   = float(a.get("Km_Since_Chain", 0) or 0)
-            bike = a.get("Bike_Model") or a.get("Bike_Brand") or "unknown"
-            lines.append(f"• {a['Athlete']} — {km:,.0f}km since chain · {bike}")
-    else:
-        alerts = get_service_due(club_id, limit=10)
-        if not alerts:
-            return "No service alerts pending."
-        lines = [f"Service Due ({len(alerts)} athletes) *[estimated data]*\n"]
-        for a in alerts:
-            km   = float(a.get("Km_Since_Service", 0) or 0)
-            bike = a.get("Bike_Model") or a.get("Bike_Brand") or "unknown"
-            last = str(a.get("Last_Service_Date", "") or "")
-            last_str = f" · last: {last[:7]}" if last and last != "nan" else ""
-            lines.append(f"• {a['Athlete']} — {km:,.0f}km since service{last_str} · {bike}")
+        if athletes:
+            lines = [f"\nChain Due ({len(athletes)}) *[estimated data]*\n"]
+            for a in athletes:
+                km   = float(a.get("Km_Since_Chain", 0) or 0)
+                bike = a.get("Bike_Model") or a.get("Bike_Brand") or "unknown"
+                lines.append(f"• {a['Athlete']} — {km:,.0f}km since chain · {bike}")
+            sections.append("\n".join(lines))
 
-    return "\n".join(lines)
+    if not sections:
+        return "No service or chain alerts pending — all clear."
+
+    return "\n".join(sections)
 
 
 def _fmt_upgrade(club_id: int, limit: int = 8) -> str:
@@ -473,47 +509,70 @@ def _fmt_at_risk(club_id: int) -> str:
     data    = get_at_risk_members(club_id)
     members = data.get("at_risk", [])
     if not members:
-        return "No at-risk regulars detected — everyone is showing up."
-    lines = [f"At-risk regulars ({len(members)})\n"]
+        return "👥 All regulars are still showing up — no one at risk."
+    lines = [
+        f"👥 *Loyal riders going quiet ({len(members)})*",
+        f"_These members rode with you regularly but haven't shown up in 6+ weeks._\n"
+    ]
     for m in members:
+        w      = m["weeks_absent"]
+        rides  = m["attended"]
+        flag   = " ❗" if w >= 12 else ""
         lines.append(
-            f"• {m['name']} — {m['attended']}/{m['total_events']} events"
-            f" ({m['rate_pct']}%) · last seen {m['weeks_absent']}w ago"
+            f"• {m['name']} — {rides} rides together · absent {w}w{flag}"
         )
+    lines.append("\n_💬 Consider reaching out — a personal message goes a long way._")
     return "\n".join(lines)
 
 
 def _draft_whatsapp(name: str, signal: str, hint: str = "", **kwargs) -> str:
+    def _approx_km(km: float) -> str:
+        """Round km to a natural human estimate — avoid surveillance feel."""
+        if km >= 30_000: return f"over {int(km/10_000)*10}k km"
+        if km >= 10_000: return f"around {round(km/5_000)*5}k km"
+        if km >= 5_000:  return f"nearly {round(km/1_000)}k km"
+        return f"a few thousand km"
+
+    def _approx_wk(wk: float) -> str:
+        """Round weekly km to nearest 20."""
+        if wk < 20: return "regularly active"
+        return f"around {round(wk/20)*20}km a week"
+
+    def _approx_weeks(w: int) -> str:
+        """Convert weeks to human time expression."""
+        if w >= 16: return f"about {round(w/4)} months"
+        if w >= 8:  return f"a couple of months"
+        return f"a few weeks"
+
     first = name.split()[0]
     if signal == "service":
         km   = float(kwargs.get("km_since", 0) or 0)
         bike = kwargs.get("bike", "your bike")
         ctx  = (f"Athlete first name: {first}\n"
                 f"Bike: {bike}\n"
-                f"Km since last service: {km:,.0f}km\n"
-                f"Reason: bike is overdue for service")
+                f"Key number: {_approx_km(km)} since last service\n"
+                f"Reason: bike is overdue for a service — mention this naturally, not as a data readout")
     elif signal == "upgrade":
-        wk   = float(kwargs.get("weekly_km", 0) or 0)
-        bike = kwargs.get("bike", "their current bike")
-        ev   = int(kwargs.get("events", 0) or 0)
+        wk      = float(kwargs.get("weekly_km", 0) or 0)
+        bike    = kwargs.get("bike", "their current bike")
+        bike_km = float(kwargs.get("bike_km", 0) or 0)
+        ev      = int(kwargs.get("events", 0) or 0)
+        key_num = f"{_approx_km(bike_km)} on their {bike}" if bike_km >= 20_000 else _approx_wk(wk)
         ctx  = (f"Athlete first name: {first}\n"
                 f"Current bike: {bike}\n"
-                f"Weekly km: {wk:.0f}km\n"
-                f"Club events attended: {ev}\n"
-                f"Reason: strong rider on a lower-tier bike, good upgrade candidate")
+                f"Key number: {key_num}\n"
+                f"Reason: serious rider who has put a lot into their bike — time for an upgrade conversation")
     elif signal == "ghost":
         weeks = int(kwargs.get("weeks", 0) or 0)
         ev    = int(kwargs.get("events", 0) or 0)
         ctx   = (f"Athlete first name: {first}\n"
-                 f"Club events attended historically: {ev}\n"
-                 f"Weeks since last seen at club ride: {weeks}\n"
-                 f"Reason: was a regular member but has stopped showing up")
+                 f"Key number: haven't seen them for {_approx_weeks(weeks)}\n"
+                 f"Reason: loyal member who has stopped showing up — keep it warm, no pressure")
     else:
         wk  = float(kwargs.get("weekly_km", 0) or 0)
         ev  = int(kwargs.get("events", 0) or 0)
         ctx = (f"Athlete first name: {first}\n"
-               f"Weekly km: {wk:.0f}km\n"
-               f"Club events attended: {ev}\n"
+               f"Key number: {_approx_wk(wk)}\n"
                f"Reason: general re-engagement")
     if hint:
         ctx += f"\nOwner's note: {hint}"
@@ -539,6 +598,13 @@ def _draft_whatsapp(name: str, signal: str, hint: str = "", **kwargs) -> str:
 
 def _handle_draft_message(club_id: int, athlete_name: str, question: str = "") -> str:
     p = get_athlete_profile(club_id, athlete_name)
+
+    if p.get("data_quality") == "ambiguous":
+        matches = p.get("matches", [])
+        names   = "\n".join(f"• {n}" for n in matches)
+        return (f"Found {len(matches)} athletes matching *{athlete_name}* — "
+                f"please be more specific:\n{names}")
+
     if not p.get("found"):
         return f"No data found for '{athlete_name}' — not in the event attendance records."
 
@@ -549,8 +615,23 @@ def _handle_draft_message(club_id: int, athlete_name: str, question: str = "") -
     chn_km  = float(p.get("km_since_chain", 0) or 0)
     rtier   = p.get("rider_tier", "")
     btier   = p.get("primary_tier", "")
-    bike    = p.get("primary_bike") or "bike"
-    bike    = "bike" if bike in ("nan", "unknown", "") else bike
+    # Use brand name for drafts — avoids persona names like "Jerry", "Rose Four"
+    _KNOWN_BRANDS = {
+        "canyon","trek","specialized","bmc","scott","cannondale","giant",
+        "pinarello","colnago","bianchi","cervelo","look","orbea","merida",
+        "wilier","felt","factor","lapierre","focus","cube","ridley","rose",
+    }
+    raw_bike  = p.get("primary_bike") or ""
+    raw_brand = p.get("primary_brand") or ""
+    raw_brand = "" if raw_brand in ("nan", "unknown") else raw_brand
+    raw_bike  = "" if raw_bike  in ("nan", "unknown") else raw_bike
+    # Use brand if known, else check if bike name itself contains a known brand word
+    if raw_brand and raw_brand.lower() in _KNOWN_BRANDS:
+        bike = raw_brand
+    elif any(b in raw_bike.lower() for b in _KNOWN_BRANDS):
+        bike = raw_bike.split()[0].capitalize()  # first word = brand
+    else:
+        bike = "your bike"  # persona name — don't expose it
     wk      = float(p.get("weekly_km", 0) or 0)
     ev      = p.get("events_count", 0)
 
@@ -566,10 +647,23 @@ def _handle_draft_message(club_id: int, athlete_name: str, question: str = "") -
             pass
     is_at_risk = weeks_absent >= 6 and ev >= 5
 
+    # No draft for people who never attended a club ride — they're recruits, not members
+    if ev == 0:
+        return (f"*{name.split()[0]} has never attended a club ride.*\n\n"
+                f"If he/she is a potential recruit — use *recruit* to see all solo riders "
+                f"or draft a personal invitation instead:\n"
+                f"_\"draft for {name.split()[0]}, invite them to join our next group ride\"_")
+
+    bike_km    = float(p.get("primary_bike_km", 0) or 0)
+    is_upgrade = (
+        (rtier in ("top", "mid") and btier in ("mid", "entry")) or
+        (bike_km >= 25_000 and btier not in ("top", "unknown"))
+    )
+
     # Priority: upgrade (highest commercial value) → service → at-risk → engagement
-    if rtier in ("top", "mid") and btier in ("mid", "entry"):
-        draft  = _draft_whatsapp(name, "upgrade", hint=question, weekly_km=wk, bike=bike, events=ev)
-        reason = f"upgrade candidate · {wk:.0f}km/wk on {bike}"
+    if is_upgrade:
+        draft  = _draft_whatsapp(name, "upgrade", hint=question, weekly_km=wk, bike=bike, events=ev, bike_km=bike_km)
+        reason = f"upgrade candidate · {wk:.0f}km/wk · {bike_km:,.0f}km on {bike}"
     elif svc_due:
         draft  = _draft_whatsapp(name, "service", hint=question, km_since=svc_km, bike=bike)
         reason = f"service due · {svc_km:,.0f}km since last"
@@ -588,120 +682,282 @@ def _handle_draft_message(club_id: int, athlete_name: str, question: str = "") -
             f"_(copy & send on WhatsApp)_")
 
 
+def _fmt_loyal(club_id: int, limit: int = 10) -> str:
+    from .retriever import get_loyal_members
+    data    = get_loyal_members(club_id, limit=limit)
+    members = data.get("loyal", [])
+    if not members:
+        return "🏅 No loyal active members found yet."
+    curr_year = date.today().year
+    lines = [
+        f"*🏅 Most loyal active members ({len(members)})*",
+        f"_Ranked by rides together — still showing up regularly._\n"
+    ]
+    for m in members:
+        yr_str   = f" · {m['curr_year_km']:,.0f}km in {curr_year}" if m["curr_year_km"] > 0 else ""
+        bike_str = f" · {m['primary_bike']}" if m["primary_bike"] else ""
+        tier_str = f" ({m['rider_tier']} rider)" if m["rider_tier"] and m["rider_tier"] not in ("unknown", "") else ""
+        lines.append(f"• {m['name']} — {m['events']} rides{yr_str}{bike_str}{tier_str}")
+    return "\n".join(lines)
+
+
+_weather_cache: dict = {}
+
+def _fetch_weather(lat: float, lon: float) -> dict:
+    """
+    Fetch 7-day forecast from Open-Meteo (free, no key).
+    Returns {date_str: {tmax, tmin, rain_mm, wind_kmh, icon}} cached for 3 hours.
+    """
+    import time as _time
+    cache_key = f"{lat},{lon}"
+    if cache_key in _weather_cache:
+        cached = _weather_cache[cache_key]
+        if _time.time() - cached["ts"] < 10800:  # 3h TTL
+            return cached["data"]
+
+    try:
+        r = requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude":   lat,
+                "longitude":  lon,
+                "daily":      "temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,precipitation_probability_max",
+                "timezone":   "Europe/Zurich",
+                "forecast_days": 14,
+            },
+            timeout=5,
+        )
+        r.raise_for_status()
+        daily = r.json().get("daily", {})
+        result = {}
+        for i, dt in enumerate(daily.get("time", [])):
+            tmax  = daily.get("temperature_2m_max",             [None])[i]
+            tmin  = daily.get("temperature_2m_min",             [None])[i]
+            rain  = daily.get("precipitation_sum",              [0])[i] or 0
+            wind  = daily.get("wind_speed_10m_max",             [0])[i] or 0
+            prob  = daily.get("precipitation_probability_max",  [0])[i] or 0
+            icon  = "🌧" if prob >= 50 else ("🌦" if prob >= 25 else "☀️")
+            result[dt] = {
+                "tmax": round(tmax) if tmax is not None else None,
+                "tmin": round(tmin) if tmin is not None else None,
+                "rain_mm": round(rain, 1),
+                "wind_kmh": round(wind),
+                "prob": int(prob),
+                "icon": icon,
+            }
+        _weather_cache[cache_key] = {"ts": _time.time(), "data": result}
+        return result
+    except Exception:
+        return {}
+
+
 def _fmt_briefing(club_id: int) -> str:
-    from .retriever import _norm, _load_csv, _paths, _load_leaderboard
+    from .retriever import _norm, _load_csv, _paths, _load_leaderboard, _EXCLUDED_ATHLETES
+    from pathlib import Path as _Path
     import pandas as _pd
 
     sections = []
-    p      = _paths(club_id)
-    enr_df = _load_csv(p["enriched"])
-    prof_df= _load_csv(p["profiles"])
+    p       = _paths(club_id)
+    enr_df  = _load_csv(p["enriched"])
+    prof_df = _load_csv(p["profiles"])
+    att_df  = _load_csv(p["attendance"])
 
-    # Community member norms
+    # Community member norms — exclude privacy-flagged athletes
     community = set()
     if not enr_df.empty:
         for name in enr_df["Athlete_Raw"].dropna():
-            community.add(_norm(str(name)))
+            n = _norm(str(name))
+            if n not in _EXCLUDED_ATHLETES:
+                community.add(n)
 
-    # Community leaderboard stats this week
+    # Community leaderboard stats this week + year top 3
     lb_df = _load_leaderboard(club_id)
-    week = year = active = total_km = top_athlete = top_km = None
+    week = year = None
+    top3_year = []
     if not lb_df.empty:
         latest_year = lb_df["Year"].max()
         latest_week = lb_df[lb_df["Year"] == latest_year]["Week_Number"].max()
         week, year  = int(latest_week), int(latest_year)
-        w_df        = lb_df[(lb_df["Week_Number"] == latest_week) &
-                            (lb_df["Year"] == latest_year)]
-        best        = (w_df.sort_values("Snapshot_Date", ascending=False)
-                          .groupby("Athlete")["Distance_km"].max())
-        comm_best   = best[best.index.map(_norm).isin(community)]
-        active      = len(comm_best)
-        total_km    = round(comm_best.sum(), 0)
-        if not comm_best.empty:
-            top_athlete = comm_best.idxmax()
-            top_km      = round(comm_best.max(), 0)
 
-    sections.append(
-        f"TNCE Briefing · W{week}/{year}\n"
-        f"Community active: {active} riders · {total_km:,.0f}km\n"
-        f"Top: {top_athlete} ({top_km:.0f}km)" if top_athlete else
-        f"TNCE Briefing · W{week}/{year}\nNo community leaderboard data yet."
-    )
+        # Top 3 for current year — use CurrYear_km from athlete profiles (real Strava data)
+        if not prof_df.empty:
+            prof_df["CurrYear_km"] = _pd.to_numeric(prof_df["CurrYear_km"], errors="coerce").fillna(0)
+            prof_df["_norm_tmp"]   = prof_df["Name"].apply(_norm)
+            yr_comm = (prof_df[prof_df["_norm_tmp"].isin(community) &
+                               ~prof_df["_norm_tmp"].isin(_EXCLUDED_ATHLETES)]
+                       .sort_values("CurrYear_km", ascending=False)
+                       .head(3))
+            top3_year = [(str(r["Name"]), round(float(r["CurrYear_km"]), 0))
+                         for _, r in yr_comm.iterrows() if float(r["CurrYear_km"]) > 0]
 
-    # Community-only tier split + bike brands
-    if not prof_df.empty:
-        prof_df["_norm"] = prof_df["Name"].apply(_norm)
-        comm_prof = prof_df[prof_df["_norm"].isin(community)]
-        td        = comm_prof["rider_tier"].value_counts()
-        sections.append(
-            f"\nRiders: top {td.get('top',0)} · mid {td.get('mid',0)} · entry {td.get('entry',0)}"
-            f" (of {len(community)} community members)"
-        )
-        # Bike brands
-        bikes_df = _load_csv(p["profiles"].parent / "../real/athlete_bikes.csv"
-                             if False else p["profiles"].parent / "athlete_bikes.csv")
-        # fallback path
-        from pathlib import Path as _Path
-        bikes_path = _Path(p["profiles"]).parent / "athlete_bikes.csv"
+    # Event count for current year
+    events_year = 0
+    if not att_df.empty:
         try:
-            bk = _pd.read_csv(bikes_path, dtype=str)
-            comm_ids = comm_prof["Athlete_ID"].astype(str).tolist()
-            comm_bk  = bk[bk["Athlete_ID"].astype(str).isin(comm_ids)]
-            top_brands = (comm_bk["Brand"].value_counts()
-                         .head(6)
-                         .index.tolist())
-            if top_brands:
-                brand_str = " · ".join(
-                    f"{b}({comm_bk['Brand'].value_counts()[b]})"
-                    for b in top_brands
-                )
-                sections.append(f"\nCommunity bikes: {brand_str}")
+            att_df["_date"] = _pd.to_datetime(att_df["Date"], format="mixed",
+                                               dayfirst=False, errors="coerce")
+            events_year = int(att_df[att_df["_date"].dt.year == date.today().year].shape[0])
         except Exception:
             pass
 
-    # Upgrade candidates
-    upg  = get_upgrade_candidates(club_id, limit=5)
-    cands = upg.get("candidates", [])
-    if cands:
-        lines = [f"\nUpgrade ({len(cands)})"]
-        for c in cands:
-            bike     = c.get("primary_bike") or ""
-            has_bike = bool(bike and bike not in ("nan", "unknown", ""))
-            bike     = bike if has_bike else "no bike data"
-            fleet_km = float(c.get("fleet_km") or 0)
-            km_str   = f" · {fleet_km:,.0f}km" if has_bike and fleet_km > 0 else ""
-            lines.append(f"• {c['name']} — {c['weekly_km']:.0f}km/wk · {bike}{km_str}")
-        sections.append("\n".join(lines))
-    else:
-        sections.append("\nUpgrade — none flagged")
+    # Profile + bike coverage stats
+    profiled_count = 0
+    bikes_known    = 0
+    if not prof_df.empty:
+        prof_df["_norm"] = prof_df["Name"].apply(_norm)
+        comm_prof_tmp  = prof_df[prof_df["_norm"].isin(community)]
+        profiled_count = len(comm_prof_tmp)
+        bikes_known    = int(comm_prof_tmp[
+            comm_prof_tmp["primary_bike"].notna() &
+            ~comm_prof_tmp["primary_bike"].isin(["nan", "unknown", ""])
+        ].shape[0])
 
-    # Service alerts
-    alerts = get_service_due(club_id, limit=5)
-    if alerts:
-        lines = [f"\nService Due ({len(alerts)})"]
-        for a in alerts:
-            km   = float(a.get("Km_Since_Service", 0) or 0)
-            bike = a.get("Bike_Model") or a.get("Bike_Brand") or "?"
-            lines.append(f"• {a['Athlete']} — {km:,.0f}km · {bike}")
-        sections.append("\n".join(lines))
-    else:
-        sections.append("\nService — all clear")
+    medals   = ["🥇", "🥈", "🥉"]
+    top3_str = "  ".join(f"{medals[i]} {n} ({km:,.0f}km)" for i, (n, km) in enumerate(top3_year))
+    header   = (
+        f"*🚴 TNCE Briefing · W{week}/{year}*\n"
+        f"{events_year} events · {len(community)} community members · {profiled_count} full profiles · {bikes_known} with bike gear identified\n"
+        + (f"Top {date.today().year}: {top3_str}" if top3_str else "No year data yet")
+    )
+    sections.append(header)
 
-    # At-risk
-    risk = get_at_risk_members(club_id)
-    members = risk.get("at_risk", [])
-    if members:
-        lines = [f"\nAt-risk ({len(members)})"]
-        for m in members:
-            lines.append(
-                f"• {m['name']} — {m['attended']}/{m['total_events']}"
-                f" ({m['rate_pct']}%) · {m['weeks_absent']}w ago"
-            )
-        sections.append("\n".join(lines))
-    else:
-        sections.append("\nAt-risk — all regulars active")
+    # Community bikes — unique riders per brand
+    if not prof_df.empty:
+        comm_prof  = prof_df[prof_df["_norm"].isin(community)]
+        bikes_path = _Path(p["profiles"]).parent / "athlete_bikes.csv"
+        try:
+            bk       = _pd.read_csv(bikes_path, dtype=str)
+            comm_ids = comm_prof["Athlete_ID"].astype(str).tolist()
+            comm_bk  = bk[bk["Athlete_ID"].astype(str).isin(comm_ids)]
+            riders_per_brand = (comm_bk.groupby("Brand")["Athlete_ID"]
+                                .nunique()
+                                .sort_values(ascending=False)
+                                .head(6))
+            if not riders_per_brand.empty:
+                total_p   = len(comm_ids)
+                brand_str = " · ".join(
+                    f"{b} {n/total_p*100:.0f}%({n})"
+                    for b, n in riders_per_brand.items()
+                )
+                sections.append(f"\n*🚲 Main bike brands* \n{brand_str}")
+        except Exception:
+            pass
 
-    return "\n".join(sections)
+    # Upcoming events + weather forecast
+    if not att_df.empty and "_date" in att_df.columns:
+        try:
+            today_ts  = _pd.Timestamp(date.today())
+            upcoming  = (att_df[att_df["_date"] >= today_ts]
+                         .sort_values("_date").head(3))
+            if not upcoming.empty:
+                # Fetch forecast — Lausanne coords from config
+                try:
+                    cfg_path = ROOT / "config.json"
+                    cfg      = json.loads(cfg_path.read_text())
+                    lat      = cfg["club"].get("fallback_lat", 46.5197)
+                    lon      = cfg["club"].get("fallback_lon", 6.6323)
+                except Exception:
+                    lat, lon = 46.5197, 6.6323
+
+                forecast  = _fetch_weather(lat, lon)
+                horizon   = date.today() + timedelta(days=14)
+
+                lines = ["\n*📅 Upcoming events*"]
+                for _, ev in upcoming.iterrows():
+                    d     = ev["_date"].strftime("%a %b %d")
+                    dist  = str(ev.get("Distance",      "") or "").strip()
+                    elev  = str(ev.get("Elevation",     "") or "").strip()
+                    count = str(ev.get("Athletes_Count", "") or "").strip()
+                    route = ""
+                    if dist  and dist  not in ("nan", ""):
+                        route += f" · {dist}"
+                    if elev  and elev  not in ("nan", ""):
+                        route += f" · ↑{elev}"
+                    if count and count not in ("nan", "0", ""):
+                        route += f" · 👥 {count} registered"
+
+                    # Weather — only for events within 7-day forecast window
+                    weather  = ""
+                    ev_date  = ev["_date"].date()
+                    if ev_date <= horizon and str(ev_date) in forecast:
+                        w       = forecast[str(ev_date)]
+                        t_str   = f"{w['tmin']}–{w['tmax']}°C" if w["tmin"] is not None else f"{w['tmax']}°C"
+                        w_str   = f" · {w['wind_kmh']}km/h wind"
+                        weather = f" · {w['icon']} {t_str}{w_str}"
+                    elif ev_date > horizon:
+                        weather = " · (forecast not yet available)"
+
+                    lines.append(f"• {d} — {ev['Title']}{route}{weather}")
+                sections.append("\n".join(lines))
+        except Exception:
+            pass
+
+    # ── Smart builder — trims variable sections to fit Twilio limit ─────────────
+    from .retriever import get_loyal_members
+
+    CHAR_LIMIT = 1480
+
+    def _row_loyal(m):
+        yr = f" · {m['curr_year_km']:,.0f}km" if m["curr_year_km"] > 0 else ""
+        bk = f" · {m['primary_bike']}" if m["primary_bike"] else ""
+        return f"• {m['name']} — {m['events']} rides{yr}{bk}"
+
+    def _row_upgrade(c):
+        bike = c.get("primary_bike") or "no bike data"
+        bike = "no bike data" if bike in ("nan", "unknown", "") else bike
+        return f"• {c['name']} — {c['weekly_km']:.0f}km/wk · {bike}"
+
+    def _row_service(a):
+        km   = float(a.get("Km_Since_Service", 0) or 0)
+        bike = a.get("Bike_Model") or a.get("Bike_Brand") or "?"
+        return f"• {a['Athlete']} — {km:,.0f}km · {bike}"
+
+    def _row_atrisk(m):
+        flag = " ❗" if m["weeks_absent"] >= 12 else ""
+        return f"• {m['name']} — {m['attended']} rides · {m['weeks_absent']}w absent{flag}"
+
+    def _assemble(loyal, upg, svc, risk):
+        parts = []
+        if loyal:
+            rows = ["\n*🏅 Most loyal members (active)*"] + [_row_loyal(m) for m in loyal]
+            parts.append("\n".join(rows))
+        if upg:
+            rows = [f"\n*⭐ Upgrade ({len(upg)})*"] + [_row_upgrade(c) for c in upg]
+            parts.append("\n".join(rows))
+        else:
+            parts.append("\nUpgrade — none flagged")
+        if svc:
+            rows = [f"\n*🔧 Service Due ({len(svc)})*"] + [_row_service(a) for a in svc]
+            parts.append("\n".join(rows))
+        else:
+            parts.append("\nService — all clear")
+        if risk:
+            rows = [f"\n*👥 Loyal riders going quiet ({len(risk)}) — not seen 6w+*"] + [_row_atrisk(m) for m in risk]
+            parts.append("\n".join(rows))
+        else:
+            parts.append("\n👥 All regulars still showing up ✅")
+        return "\n".join(parts)
+
+    loyal_all = get_loyal_members(club_id, limit=5).get("loyal", [])
+    upg_all   = get_upgrade_candidates(club_id, limit=5).get("candidates", [])
+    svc_all   = get_service_due(club_id, limit=5)
+    risk_all  = get_at_risk_members(club_id).get("at_risk", [])
+
+    fixed = "\n".join(sections)
+    ln, rn = len(loyal_all), len(risk_all)
+
+    while True:
+        variable = _assemble(loyal_all[:ln], upg_all, svc_all, risk_all[:rn])
+        if len(fixed) + len(variable) <= CHAR_LIMIT or (ln <= 2 and rn <= 2):
+            break
+        if rn > 2:
+            rn -= 1
+        elif ln > 2:
+            ln -= 1
+        else:
+            break
+
+    return fixed + variable
 
 
 # ── Athlete profile — deterministic, facts only ───────────────────────────────
@@ -709,6 +965,12 @@ def _fmt_briefing(club_id: int) -> str:
 def _handle_athlete(club_id: int, athlete_name: str,
                     question: str, history: list[dict]) -> str:
     p = get_athlete_profile(club_id, athlete_name)
+
+    if p.get("data_quality") == "ambiguous":
+        matches = p.get("matches", [])
+        names   = "\n".join(f"• {n}" for n in matches)
+        return (f"Found {len(matches)} athletes matching *{athlete_name}* — "
+                f"please be more specific:\n{names}")
 
     if not p.get("found"):
         return f"No data found for {athlete_name} — not in the event attendance records."
@@ -848,6 +1110,9 @@ def _execute_tool(tool_name: str, args: dict,
     if tool_name == "get_potential_recruits":
         return _fmt_recruits(club_id, limit=int(args.get("limit", 10)))
 
+    if tool_name == "get_loyal_members":
+        return _fmt_loyal(club_id, limit=int(args.get("limit", 10)))
+
     if tool_name == "get_briefing":
         return _fmt_briefing(club_id)
 
@@ -861,19 +1126,27 @@ def _execute_tool(tool_name: str, args: dict,
 
 HELP_TEXT = """🚴 *ClubRide.Ai* — TNCE club assistant
 
-*Commands:*
+*Club intelligence:*
 🏆 *top 10* — this week's leaderboard
-🎯 *who to talk to* — 2 priorities for this weekend
-⭐ *upgrade* — community members who should buy a new bike
-🔧 *service* — bikes due for service or chain
-⚠️ *at risk* — regulars who stopped showing up
-👥 *recruit* — serious solo riders to invite to the group
+🎯 *who to talk to* — 2 weekend priorities
+⭐ *upgrade* — riders ready for a new bike
+🔧 *service* — bikes overdue for service or chain
+⚠️ *at risk* — loyal members going quiet
+👥 *recruit* — solo riders worth inviting
+🏅 *loyal* — most active community members
 📋 *briefing* — full weekly report
 
-*Ask about any rider:*
+*Rider profile:*
 👤 "tell me about Marko"
-👤 "who is John Custo"
-👤 "Julien Loisy"
+👤 "who is Julien"
+
+*Personalised messages:*
+✉️ "draft for [name]" — auto-detects signal (upgrade / service / re-engage)
+✉️ "draft for [name], mention [your note]" — add your own angle
+_Examples:_
+  "draft for Tomasz"
+  "draft for Floor, mention new Canyon just arrived"
+  "draft for Thomas, we have 20% off service this week"
 
 """
 
@@ -940,6 +1213,8 @@ def handle(message: str, owner_id: str,
         "draft for":     ("draft_message", {}),
         "message for":   ("draft_message", {}),
         "write to":      ("draft_message", {}),
+        "loyal":         ("get_loyal_members", {}),
+        "top members":   ("get_loyal_members", {}),
         "briefing":      ("get_briefing", {}),
         "résumé":        ("get_briefing", {}),
         "weekly report": ("get_briefing", {}),
@@ -965,6 +1240,31 @@ def handle(message: str, owner_id: str,
             add_turn(owner_id, message, reply)
             return reply
 
+    # ── Privacy gate — anonymise names before sending to Gemini ─────────────────
+    try:
+        from .retriever import _paths, _load_csv
+        _df    = _load_csv(_paths(club_id)["profiles"])
+        _names = _df["Name"].dropna().tolist() if not _df.empty else []
+    except Exception:
+        _names = []
+
+    _anon = build_anonymiser(_names)
+
+    if isinstance(contents, list):
+        anon_contents = []
+        for turn in contents:
+            anon_parts = [types.Part(text=_anon.anonymise(p.text))
+                          if hasattr(p, "text") else p
+                          for p in turn.parts]
+            anon_contents.append(types.Content(role=turn.role, parts=anon_parts))
+    else:
+        anon_contents = _anon.anonymise(contents)
+
+    anon_msg = anon_contents if isinstance(anon_contents, str) else anon_contents[-1].parts[0].text
+    print(f"\n[PRIVACY GATE]")
+    print(f"  Original : {message}")
+    print(f"  To Gemini: {anon_msg}")
+
     # Gemini picks the tool — 3 retries with 2s backoff on 503
     import time as _time
     response = None
@@ -972,7 +1272,7 @@ def handle(message: str, owner_id: str,
         try:
             response = _client.models.generate_content(
                 model="gemini-2.5-flash",
-                contents=contents,
+                contents=anon_contents,
                 config=types.GenerateContentConfig(
                     tools=[_TOOLS],
                     system_instruction=_ROUTING_SYSTEM,
@@ -995,12 +1295,19 @@ def handle(message: str, owner_id: str,
         add_turn(owner_id, message, reply)
         return reply
 
-    # Extract function call — ignore any text parts that look like raw tool calls
-    for part in response.candidates[0].content.parts:
+    # Extract function call — de-anonymise args before tool execution
+    _content = response.candidates[0].content if response.candidates else None
+    _parts   = (_content.parts if _content else None) or []
+    for part in _parts:
         if hasattr(part, "function_call") and part.function_call:
-            fn    = part.function_call
+            fn        = part.function_call
+            raw_args  = dict(fn.args)
+            args      = _anon.deanonymise_args(raw_args)
+            if raw_args != args:
+                print(f"  Gemini got: {fn.name}({raw_args})")
+                print(f"  Resolved  : {fn.name}({args})")
             try:
-                reply = _execute_tool(fn.name, dict(fn.args),
+                reply = _execute_tool(fn.name, args,
                                       club_id, message, history)
             except Exception:
                 reply = "Something went wrong fetching that data. Please try again."
