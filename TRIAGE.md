@@ -16,6 +16,7 @@ Running log of issues found, fixed, and outstanding. Updated as the product evol
 | 6 | Future event date labelled "last seen" instead of "upcoming" | Giovanni's May 2 registration showed as "last 2026-05-02" on May 1 | Added `date.today()` comparison — labels future dates as "upcoming" |
 | 7 | Draft messages had no call to action | Message complimented the rider but gave no next step | Updated `_DRAFT_SYSTEM` prompt: sentence 1 = data reference, sentence 2 = explicit CTA per signal type |
 | 8 | Personal athlete name hardcoded in `retriever.py` | Name would appear in public GitHub repo | Moved to `EXCLUDED_ATHLETES` env var in `.env` (gitignored) |
+| 9 | Admin/owner names (Aleksei, Julien) appeared in bot results | Admins are club operators, not sales targets | Added both to `EXCLUDED_ATHLETES` in `.env` — filtered from all tools globally |
 
 ---
 
@@ -27,7 +28,7 @@ Running log of issues found, fixed, and outstanding. Updated as the product evol
 | 2 | "Full list of members" queries occasionally still route to briefing | Medium | Gemini semantically maps member-list requests to the closest tool; deterministic gate (validate tool call against trigger words) was scoped out of MVP |
 | 3 | At-risk detection inconsistency in draft message | Low | `_handle_draft_message` calculates `weeks_absent` from `last_seen` in athlete profile; `get_at_risk_members` tool uses its own calculation from attendance history — may differ by 1-2 weeks |
 | 4 | Hidden gear — ~10-20% of athletes | Structural | Athletes with private Strava gear settings have no bike data regardless of follow status; no upgrade or service signal possible for these riders |
-| 5 | Follower gap | Structural | Athletes who attend rides but don't follow the owner appear as attendance-only; no stats, no bike, no scoring. Mitigation: owner proactively follows all regular attendees |
+| 5 | Follower gap | Structural | 67 of 165 event attendees are not in the owner's following list — no stats, no bike, no scoring for them. Top priority: follow the top 10 by attendance (Jaime Saborio, Fabien Ramat, Calixe Cathomen, etc.) then re-run `scrape_followed_athletes.py --all` |
 
 ---
 

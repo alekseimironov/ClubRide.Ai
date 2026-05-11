@@ -76,7 +76,9 @@ def add_turn(owner_id: str, user_message: str, bot_reply: str):
     # Keep only the last MAX_TURNS × 2 messages
     history = history[-(MAX_TURNS * 2):]
 
+    # Merge into existing entry so persistent keys (e.g. lang) are not lost
     data[owner_id] = {
+        **entry,
         "history":     history,
         "last_active": datetime.now().isoformat(),
     }
@@ -84,11 +86,46 @@ def add_turn(owner_id: str, user_message: str, bot_reply: str):
 
 
 def clear(owner_id: str):
-    """Reset session for this owner (e.g. after long idle or explicit reset)."""
+    """Reset session history but preserve persistent preferences (e.g. lang)."""
     data = _load()
     if owner_id in data:
+        lang = data[owner_id].get("lang")
         del data[owner_id]
+        if lang:
+            data[owner_id] = {
+                "history":     [],
+                "last_active": datetime.now().isoformat(),
+                "lang":        lang,
+            }
         _save(data)
+
+
+# ── Language preference ────────────────────────────
+SUPPORTED_LANGS = {"en", "fr"}
+
+def get_lang(owner_id: str) -> str:
+    """Return owner's stored language preference, falling back to config.json."""
+    data  = _load()
+    entry = data.get(owner_id)
+    if entry and "lang" in entry:
+        return entry["lang"]
+    try:
+        cfg = json.loads((ROOT / "config.json").read_text())
+        return cfg.get("club", {}).get("language", "en")
+    except Exception:
+        return "en"
+
+
+def set_lang(owner_id: str, lang: str):
+    """Persist a language preference for this owner."""
+    if lang not in SUPPORTED_LANGS:
+        return
+    data  = _load()
+    entry = data.get(owner_id, {"history": [], "last_active": datetime.now().isoformat()})
+    entry["lang"] = lang
+    entry["last_active"] = datetime.now().isoformat()
+    data[owner_id] = entry
+    _save(data)
 
 
 def format_for_prompt(history: list[dict]) -> str:

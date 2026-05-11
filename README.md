@@ -78,12 +78,27 @@ Place CSV files in `data/real/` — the bot expects:
 
 | File | Contents | Scraped by | Frequency |
 |---|---|---|---|
-| `leaderboard_history.csv` | Weekly km per athlete | `scrapers/scrape_leaderboard.py` | Twice a week (Wed + Sun) |
-| `historical_attendance_TNCE.csv` | Event attendance records | `scrapers/scrape_events.py` | Weekly |
-| `athlete_profiles.csv` | Rider tier, bike, speed stats | `scrapers/analyse_athletes.py` | Monthly |
-| `athlete_bikes.csv` | Bike model, brand, purchase data | `scrapers/scrape_active_bikes.py` | Monthly |
+| `leaderboard.csv` | Weekly km per athlete | `scrapers/scrape_leaderboard.py` | Twice a week (Wed + Sun) |
+| `historical_attendance.csv` | Event attendance records | `scrapers/scrape_events.py` | Weekly |
+| `athlete_profiles.csv` | Rider tier, bike, speed stats | `scrapers/scrape_followed_athletes.py` | Monthly |
+| `athlete_bikes.csv` | Bike model, brand, purchase data | `scrapers/scrape_followed_athletes.py` | Monthly |
 
-Run the scrapers in `scrapers/` to populate these files.
+**Weekly update order (run in sequence):**
+```bash
+python scrapers/scrape_leaderboard.py
+python scrapers/scrape_events.py
+python scrapers/enrich_attendance.py
+python scrapers/generate_crm.py
+```
+
+**Monthly update order (run after following new athletes on Strava):**
+```bash
+python scrapers/scrape_followed_athletes.py --all
+python scrapers/classify_bikes_llm.py
+python scrapers/build_bike_model.py
+python scrapers/enrich_attendance.py
+python scrapers/generate_crm.py
+```
 
 **Scraping limitations and known challenges**
 
@@ -184,6 +199,12 @@ ClubRide.Ai/
 **Not yet automated (manual trigger required):**
 - Friday briefing — works via `briefing` command, not yet auto-sent at 17:00
 - Data scraping — scrapers exist but run manually, not on a schedule
+
+**Privacy — admin exclusions:**
+Add admin/owner names to `EXCLUDED_ATHLETES` in `.env` to hide them from all bot results:
+```
+EXCLUDED_ATHLETES=name one,name two
+```
 
 ---
 
