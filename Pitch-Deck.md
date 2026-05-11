@@ -71,7 +71,7 @@ Owner → WhatsApp → ClubRide.Ai → Instant actionable answer
 
 ### Friday morning: "who to talk to this weekend?"
 
-![Who to talk to](images/demo-who-to-talk-to.png)
+![Who to talk to](https://raw.githubusercontent.com/alekseimironov/ClubRide.Ai/main/images/demo-who-to-talk-to.png)
 
 Two contacts. Two signals. Two drafted messages. 3 seconds.
 
@@ -84,7 +84,7 @@ Both messages are ready to copy and forward on WhatsApp — no editing required.
 
 ### From signal to sale: the upgrade funnel
 
-![Upgrade and draft](images/demo-upgrade-draft.png)
+![Upgrade and draft](https://raw.githubusercontent.com/alekseimironov/ClubRide.Ai/main/images/demo-upgrade-draft.png)
 
 `upgrade` surfaces the candidates. One follow-up message adds a custom angle — a Fara bike promotion at 20%. The bot generates a personalised, ready-to-send message referencing John's exact weekly mileage and the specific promotion.
 
@@ -94,7 +94,7 @@ Both messages are ready to copy and forward on WhatsApp — no editing required.
 
 ### Friday briefing — the full club picture
 
-![Briefing](images/demo-briefing.png)
+![Briefing](https://raw.githubusercontent.com/alekseimironov/ClubRide.Ai/main/images/demo-briefing.png)
 
 26 events · 161 members · upcoming rides with weather forecast · most loyal members · 3 upgrade candidates · 5 service alerts — delivered as a single WhatsApp message, every Friday at 17:00.
 
