@@ -28,7 +28,7 @@ from .retriever import (
     get_potential_recruits, get_week_attendees,
     get_weekend_priorities, clear_cache,
 )
-from .scorer import get_service_due, get_ghosts
+from .scorer import get_service_due
 from .session import get_history, add_turn, get_lang, set_lang
 from .feedback import log_action, build_alert
 from .strings import t

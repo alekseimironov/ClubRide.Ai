@@ -28,7 +28,6 @@ CLUB_FILES = {
         "leaderboard": "leaderboard.csv",
         "attendance":  "historical_attendance.csv",
         "activities":  "activities.csv",
-        "members":     "members.csv",
         "crm":         "crm.csv",
         "profiles":    "athlete_resolved.csv",
         "enriched":    "attendance_enriched.csv",
@@ -37,7 +36,6 @@ CLUB_FILES = {
         "leaderboard": "belga_leaderboard.csv",
         "attendance":  "historical_attendance_Belga.csv",
         "activities":  "belga_activities.csv",
-        "members":     "belga_members.csv",
         "crm":         "belga_crm.csv",
         "profiles":    "athlete_resolved.csv",
         "enriched":    "attendance_enriched.csv",
@@ -337,77 +335,6 @@ def get_athlete_crm(club_id: int, athlete_name: str) -> dict:
 
 
 # ── Members — Fix 4: date arithmetic for ghosts ───
-def get_ghost_members(club_id: int, absent_weeks: int = 4) -> dict:
-    """
-    True ghost = absent from ALL THREE sources in the window:
-      1. Not in leaderboard top-100 (last absent_weeks weeks)
-      2. Not in event attendance (last absent_weeks weeks)
-      3. Not in daily activity feed (last absent_weeks weeks)
-
-    A rider absent from leaderboard but present in attendance
-    (e.g. attends club rides but low km) is NOT a ghost.
-    """
-    p       = _paths(club_id)
-    members = _load_csv(p["members"])
-    lb      = _load_leaderboard(club_id)
-    att     = _load_csv(p["attendance"])
-    acts    = _load_csv(p["activities"])
-
-    if members.empty:
-        return {"ghosts": [], "total_ghosts": 0,
-                "absent_weeks": absent_weeks, "data_source": "real"}
-
-    cutoff_date = date.today() - timedelta(weeks=absent_weeks)
-    cutoff_ts   = pd.Timestamp(cutoff_date)
-
-    # Source 1 — real leaderboard (recent window)
-    active_norms: set[str] = set()
-    if not lb.empty and "Snapshot_Date" in lb.columns:
-        lb["Snapshot_Date"] = pd.to_datetime(lb["Snapshot_Date"], errors="coerce")
-        recent_lb = lb[lb["Snapshot_Date"] >= cutoff_ts]
-        active_norms |= set(recent_lb["Athlete"].apply(_norm))
-
-    # Source 2 — event attendance (all-time, not just recent window)
-    # Attendance history is the most reliable presence signal we have
-    if not att.empty:
-        for cell in att["Athletes_Names"].dropna():
-            for name in str(cell).split(","):
-                name = name.strip()
-                if name:
-                    active_norms.add(_norm(name))
-
-    # Source 4 — daily activity feed (recent window)
-    if not acts.empty:
-        acts["Activity_Date"] = pd.to_datetime(acts["Activity_Date"], errors="coerce")
-        recent_acts = acts[acts["Activity_Date"] >= cutoff_ts]
-        active_norms |= set(recent_acts["Athlete"].apply(_norm))
-
-    # Build fuzzy key set from active sources: (firstname, last_initial)
-    # Handles Strava's privacy truncation: "Abdi Bennani" → "Abdi B."
-    def _fuzzy_key(name: str) -> tuple[str, str]:
-        parts = _norm(name).split()
-        if not parts:
-            return ("", "")
-        first   = parts[0].rstrip(".")
-        initial = parts[-1][0] if len(parts) > 1 else ""
-        return (first, initial)
-
-    active_fuzzy = {_fuzzy_key(n) for n in active_norms if n}
-
-    def _is_active(full_name: str) -> bool:
-        # Try exact match first
-        if _norm(full_name) in active_norms:
-            return True
-        # Fuzzy match: firstname + last initial
-        return _fuzzy_key(full_name) in active_fuzzy
-
-    ghosts = members[~members["Full_Name"].apply(_is_active)]
-    return {
-        "ghosts":       ghosts[["Full_Name", "Membership"]].to_dict("records"),
-        "total_ghosts": len(ghosts),
-        "absent_weeks": absent_weeks,
-        "data_source":  "real",
-    }
 
 
 # ── Activities ─────────────────────────────────────
@@ -432,12 +359,19 @@ def get_recent_activities(club_id: int, days: int = 2,
 
 # ── Club summary ───────────────────────────────────
 def get_club_summary(club_id: int) -> dict:
-    p       = _paths(club_id)
-    members = _load_csv(p["members"])
-    lb      = _load_leaderboard(club_id)
+    p      = _paths(club_id)
+    lb     = _load_leaderboard(club_id)
+    enr_df = _load_csv(p["enriched"])
+
+    # Community size = unique attendees across all events (attendance is truth)
+    total_community = 0
+    if not enr_df.empty and "Athlete_Raw" in enr_df.columns:
+        total_community = enr_df["Athlete_Raw"].apply(
+            lambda n: _norm(str(n))
+        ).nunique()
 
     if lb.empty:
-        return {"total_members": len(members), "active_this_week": 0,
+        return {"total_members": total_community, "active_this_week": 0,
                 "total_km_this_week": 0, "top_athlete": None,
                 "top_km": 0, "week": None, "data_source": "real"}
 
@@ -449,7 +383,7 @@ def get_club_summary(club_id: int) -> dict:
                          .groupby("Athlete")["Distance_km"].max())
 
     return {
-        "total_members":      len(members),
+        "total_members":      total_community,
         "active_this_week":   len(best),
         "total_km_this_week": round(best.sum(), 1),
         "top_athlete":        best.idxmax() if not best.empty else None,

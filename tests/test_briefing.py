@@ -4,7 +4,7 @@ Simulates the Friday briefing — prints to console, no WhatsApp send.
 Run: python -m tests.test_briefing
 """
 
-from brain.scorer    import get_upgrade_candidates, get_service_due, get_ghosts
+from brain.scorer    import get_upgrade_candidates, get_service_due
 from brain.retriever import get_club_summary, clear_cache
 
 clear_cache()  # force fresh read after retriever fix
@@ -50,20 +50,10 @@ def run():
     else:
         print("  No service alerts pending")
 
-    # ── Ghost members ──────────────────────────────
-    print("\n--- GHOST MEMBERS (absent 4+ weeks) -----------")
-    ghosts = get_ghosts(CLUB)
-    if ghosts:
-        for g in ghosts[:10]:
-            print(f"  {g['Full_Name']}  ({g.get('Membership','member')})")
-    else:
-        print("  No ghost members detected")
-
     print("\n" + "=" * 55)
     print(f"  Total signals: "
           f"{len(candidates)} upgrades  |  "
-          f"{len(service)} services  |  "
-          f"{len(ghosts)} ghosts")
+          f"{len(service)} services")
     print("=" * 55 + "\n")
 
 

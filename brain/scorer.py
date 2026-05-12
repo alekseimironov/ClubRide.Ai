@@ -26,7 +26,6 @@ from .retriever import (
     get_athlete_crm,
     get_service_alerts,
     get_chain_alerts,
-    get_ghost_members,
     get_weekly_unique_athletes,
 )
 from .feedback import (
@@ -294,12 +293,6 @@ def get_service_due(club_id: int, limit: int = 10) -> list[dict]:
     return [a for a in alerts["athletes"] if a["Athlete"] in pending][:limit]
 
 
-def get_ghosts(club_id: int) -> list[dict]:
-    """Ghost members — not suppressed."""
-    result   = get_ghost_members(club_id, absent_weeks=4)
-    ghosts   = [g["Full_Name"] for g in result.get("ghosts", [])]
-    pending  = pending_alerts("ghost", ghosts)
-    return [g for g in result["ghosts"] if g["Full_Name"] in pending]
 
 
 # ── CLI test ───────────────────────────────────────
