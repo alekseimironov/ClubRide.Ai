@@ -51,12 +51,15 @@ _EXCLUDED_ATHLETES = {
     if name.strip()
 }
 
-# Community leaders — excluded from loyal members list (they already lead)
-_COMMUNITY_LEADERS = {
+# Staff — visible in leaderboard, briefing, loyal, profile
+# but excluded from upgrade/service/at-risk/recruit/draft (not sales targets)
+_STAFF_ATHLETES = {
     name.strip().lower()
-    for name in os.getenv("COMMUNITY_LEADERS", "").split(",")
+    for name in os.getenv("STAFF_ATHLETES", "").split(",")
     if name.strip()
 }
+
+_NO_SIGNAL = _EXCLUDED_ATHLETES | _STAFF_ATHLETES
 
 def _paths(club_id: int) -> dict:
     files = CLUB_FILES.get(club_id, CLUB_FILES[318940])
@@ -292,7 +295,7 @@ def get_service_alerts(club_id: int, limit: int = 10) -> dict:
         return {"athletes": [], "total_due": 0, "data_source": "synthetic"}
 
     due = df[df["Service_Due"].str.lower() == "true"].copy()
-    due = due[~due["Athlete"].apply(lambda n: _norm(str(n))).isin(_EXCLUDED_ATHLETES)]
+    due = due[~due["Athlete"].apply(lambda n: _norm(str(n))).isin(_NO_SIGNAL)]
     due["Km_Since_Service"] = pd.to_numeric(due["Km_Since_Service"], errors="coerce")
     due["Total_Est_Km"]     = pd.to_numeric(due["Total_Est_Km"],     errors="coerce")
     due = due.sort_values("Km_Since_Service", ascending=False).head(limit)
@@ -313,7 +316,7 @@ def get_chain_alerts(club_id: int, limit: int = 10) -> dict:
         return {"athletes": [], "total_due": 0, "data_source": "synthetic"}
 
     due = df[df["Chain_Due"].str.lower() == "true"].copy()
-    due = due[~due["Athlete"].apply(lambda n: _norm(str(n))).isin(_EXCLUDED_ATHLETES)]
+    due = due[~due["Athlete"].apply(lambda n: _norm(str(n))).isin(_NO_SIGNAL)]
     due["Km_Since_Chain"] = pd.to_numeric(due["Km_Since_Chain"], errors="coerce")
     due = due.sort_values("Km_Since_Chain", ascending=False).head(limit)
 
@@ -563,7 +566,7 @@ def get_upgrade_candidates(club_id: int, limit: int = 10) -> dict:
         name         = info["name"]
         events_count = info["events"]
 
-        if key in _EXCLUDED_ATHLETES:
+        if key in _NO_SIGNAL:
             continue
 
         profile = prof_lookup.get(key)
@@ -712,7 +715,7 @@ def get_at_risk_members(club_id: int,
         if rate_pct < min_rate_pct:
             continue
 
-        if key in _EXCLUDED_ATHLETES:
+        if key in _NO_SIGNAL:
             continue
 
         if s["last"] >= cutoff:
@@ -760,7 +763,7 @@ def get_loyal_members(club_id: int, limit: int = 5, min_events: int = 5) -> dict
         if not raw or raw.lower() == "nan":
             continue
         key = _norm(raw)
-        if key in _EXCLUDED_ATHLETES or key in _COMMUNITY_LEADERS:
+        if key in _EXCLUDED_ATHLETES:
             continue
         if key not in seen:
             seen[key] = {"name": raw, "events": set(), "last": row["_date"]}
@@ -884,7 +887,7 @@ def get_potential_recruits(club_id: int, limit: int = 10,
         if weekly_km < min_weekly_km:
             continue
 
-        if _norm(name) in _EXCLUDED_ATHLETES:
+        if _norm(name) in _NO_SIGNAL:
             continue
 
         # Local only — require confirmed Lausanne / Vaud location; skip if missing
@@ -935,7 +938,7 @@ def get_weekend_priorities(club_id: int) -> dict:
         crm_df["Km_Since_Service"] = pd.to_numeric(
             crm_df["Km_Since_Service"], errors="coerce").fillna(0)
         due = crm_df[crm_df["Service_Due"].str.lower() == "true"].copy()
-        due = due[~due["Athlete"].apply(lambda n: _norm(str(n))).isin(_EXCLUDED_ATHLETES)]
+        due = due[~due["Athlete"].apply(lambda n: _norm(str(n))).isin(_NO_SIGNAL)]
         due = due.sort_values("Km_Since_Service", ascending=False)
         if not due.empty:
             r = due.iloc[0]

@@ -306,10 +306,10 @@ def _fmt_leaderboard(club_id: int, top_n: int = 10, lang: str = "en") -> str:
         for name in enr_df["Matched_Name"].dropna():
             community_norms.add(_norm(str(name)))
 
-    from .retriever import _EXCLUDED_ATHLETES
+    from .retriever import _NO_SIGNAL
     community = [a for a in athletes
                  if _norm(a["Athlete"]) in community_norms
-                 and _norm(a["Athlete"]) not in _EXCLUDED_ATHLETES]
+                 and _norm(a["Athlete"]) not in _NO_SIGNAL]
     shown     = community[:top_n]
 
     att        = get_week_attendees(club_id, week, year)
