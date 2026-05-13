@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 from flask import Blueprint, request, make_response
 
 from brain.prompter      import handle
+from brain.session       import get_lang
 from bot.whatsapp_sender import send
 
 ROOT = Path(__file__).parent.parent
@@ -59,6 +60,10 @@ def whatsapp_webhook():
 
     if not body:
         return _twiml("I received an empty message. Type *help* for commands.")
+
+    # ── Thinking indicator — language-aware ───────────
+    lang = get_lang(from_number)
+    send(from_number, "_Réflexion..._" if lang == "fr" else "_Thinking..._")
 
     # ── Process + reply via proactive send (independent of Twilio timeout) ──
     try:
