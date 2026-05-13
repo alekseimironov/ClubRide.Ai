@@ -162,6 +162,15 @@ def _load_leaderboard(club_id: int) -> pd.DataFrame:
     return df
 
 
+def _load_attendance(club_id: int) -> pd.DataFrame:
+    """Load attendance CSV filtered to Active events only."""
+    p  = _paths(club_id)
+    df = _load_csv(p["attendance"])
+    if df.empty or "Status" not in df.columns:
+        return df
+    return df[df["Status"].str.strip().str.lower() == "active"].reset_index(drop=True)
+
+
 # ── Leaderboard ────────────────────────────────────
 def get_leaderboard(club_id: int, week: int = None,
                     year: int = None, top_n: int = 10) -> dict:
@@ -220,8 +229,7 @@ def get_weekly_unique_athletes(club_id: int, week: int, year: int) -> dict:
 # ── Attendance ─────────────────────────────────────
 def get_attendance(club_id: int, athlete_name: str = None,
                    last_n_events: int = 10) -> dict:
-    p  = _paths(club_id)
-    df = _load_csv(p["attendance"])
+    df = _load_attendance(club_id)
     if df.empty:
         return {"events": [], "total": 0, "data_source": "real"}
 
@@ -248,8 +256,7 @@ def get_attendance(club_id: int, athlete_name: str = None,
 
 def get_attendance_rate(club_id: int, athlete_name: str,
                         last_n_events: int = 10) -> dict:
-    p  = _paths(club_id)
-    df = _load_csv(p["attendance"])
+    df = _load_attendance(club_id)
     if df.empty:
         return {"athlete": athlete_name, "attended": 0,
                 "total_events": 0, "rate_pct": 0, "data_source": "real"}
@@ -363,12 +370,13 @@ def get_club_summary(club_id: int) -> dict:
     lb     = _load_leaderboard(club_id)
     enr_df = _load_csv(p["enriched"])
 
-    # Community size = unique attendees across all events (attendance is truth)
+    # Community size = unique attendees across all events, excluding admins
     total_community = 0
     if not enr_df.empty and "Athlete_Raw" in enr_df.columns:
-        total_community = enr_df["Athlete_Raw"].apply(
-            lambda n: _norm(str(n))
-        ).nunique()
+        total_community = (enr_df["Athlete_Raw"]
+                           .apply(lambda n: _norm(str(n)))
+                           .pipe(lambda s: s[~s.isin(_EXCLUDED_ATHLETES)])
+                           .nunique())
 
     if lb.empty:
         return {"total_members": total_community, "active_this_week": 0,
@@ -659,8 +667,8 @@ def get_at_risk_members(club_id: int,
     Attendance rate = attended / total events since their first appearance.
     Only flags athletes with >= min_events historically.
     """
+    att_df = _load_attendance(club_id)
     p      = _paths(club_id)
-    att_df = _load_csv(p["attendance"])
     enr_df = _load_csv(p["enriched"])
 
     if att_df.empty or enr_df.empty:
@@ -811,8 +819,7 @@ def get_week_attendees(club_id: int, week: int, year: int) -> dict:
     future: set of norm names registered for an upcoming event this week
     event_dates: list of (date, title, is_future) tuples for context
     """
-    p      = _paths(club_id)
-    att_df = _load_csv(p["attendance"])
+    att_df = _load_attendance(club_id)
     if att_df.empty:
         return {"past": set(), "future": set(), "event_dates": []}
 

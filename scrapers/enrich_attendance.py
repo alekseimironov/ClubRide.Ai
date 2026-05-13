@@ -78,6 +78,7 @@ def run():
     print(f"{'='*60}\n")
 
     att  = pd.read_csv(ATT_CSV,  dtype=str)
+    att  = att[att["Status"].str.strip().str.lower() == "active"].reset_index(drop=True)
     prof = pd.read_csv(PROF_CSV, dtype=str)
     prof["Weekly_km"] = pd.to_numeric(prof["Weekly_km"], errors="coerce")
 
