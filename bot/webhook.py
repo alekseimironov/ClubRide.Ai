@@ -60,9 +60,6 @@ def whatsapp_webhook():
     if not body:
         return _twiml("I received an empty message. Type *help* for commands.")
 
-    # ── Instant acknowledgement — reassures owner during long processing ──
-    send(from_number, "_Thinking..._")
-
     # ── Process + reply via proactive send (independent of Twilio timeout) ──
     try:
         reply = handle(body, owner_id=from_number, club_id=CLUB_ID)
