@@ -745,7 +745,7 @@ def _fetch_weather(lat: float, lon: float) -> dict:
 
 
 def _fmt_briefing(club_id: int, lang: str = "en") -> str:
-    from .retriever import _norm, _load_csv, _paths, _load_leaderboard, _EXCLUDED_ATHLETES
+    from .retriever import _norm, _load_csv, _paths, _load_leaderboard, _load_attendance, _EXCLUDED_ATHLETES
     from pathlib import Path as _Path
     import pandas as _pd
 
@@ -753,7 +753,7 @@ def _fmt_briefing(club_id: int, lang: str = "en") -> str:
     p       = _paths(club_id)
     enr_df  = _load_csv(p["enriched"])
     prof_df = _load_csv(p["profiles"])
-    att_df  = _load_csv(p["attendance"])
+    att_df  = _load_attendance(club_id)
 
     community = set()
     if not enr_df.empty:
@@ -800,15 +800,37 @@ def _fmt_briefing(club_id: int, lang: str = "en") -> str:
             ~comm_prof_tmp["primary_bike"].isin(["nan", "unknown", ""])
         ].shape[0])
 
+    # Attendance date range — "since Jun 2025"
+    att_since = ""
+    if not enr_df.empty:
+        try:
+            min_date = _pd.to_datetime(enr_df["Date"], format="mixed",
+                                       dayfirst=False, errors="coerce").min()
+            if not _pd.isna(min_date):
+                att_since = f" (since {min_date.strftime('%b %Y')})"
+        except Exception:
+            pass
+
+    # Profile scrape date — "data: May 13"
+    prof_date = ""
+    if not prof_df.empty and "Scraped_At" in prof_df.columns:
+        try:
+            latest_scrape = _pd.to_datetime(prof_df["Scraped_At"],
+                                            errors="coerce").max()
+            if not _pd.isna(latest_scrape):
+                prof_date = f" (data: {latest_scrape.strftime('%b %d')})"
+        except Exception:
+            pass
+
     medals   = ["🥇", "🥈", "🥉"]
     top3_str = "  ".join(f"{medals[i]} {n} ({km:,.0f}km)" for i, (n, km) in enumerate(top3_year))
     header   = (
         f"*🚴 TNCE Briefing · W{week}/{year}*\n"
         f"{events_year} {t('briefing_stat_events', lang)} · "
-        f"{len(community)} {t('briefing_stat_members', lang)} · "
-        f"{profiled_count} {t('briefing_stat_profiles', lang)} · "
+        f"{len(community)} {t('briefing_stat_members', lang)}{att_since} · "
+        f"{profiled_count} {t('briefing_stat_profiles', lang)}{prof_date} · "
         f"{bikes_known} {t('briefing_stat_bikes', lang)}\n"
-        + (f"{t('briefing_top_year', lang, year=date.today().year)} {top3_str}"
+        + (f"{t('briefing_top_year', lang, year=date.today().year)}{prof_date} {top3_str}"
            if top3_str else t("briefing_no_year", lang))
     )
     sections.append(header)
@@ -825,11 +847,12 @@ def _fmt_briefing(club_id: int, lang: str = "en") -> str:
                                 .sort_values(ascending=False)
                                 .head(6))
             if not riders_per_brand.empty:
-                total_p   = len(comm_ids)
-                brand_str = " · ".join(
-                    f"{b} {n/total_p*100:.0f}%({n})"
-                    for b, n in riders_per_brand.items()
-                )
+                total_p    = len(comm_ids)
+                brand_parts = []
+                for i, (b, n) in enumerate(riders_per_brand.items()):
+                    entry = f"{b} {n/total_p*100:.0f}%({n})"
+                    brand_parts.append(f"*{entry}*" if i == 0 else entry)
+                brand_str = " · ".join(brand_parts)
                 sections.append(f"{t('briefing_brands', lang)} \n{brand_str}")
         except Exception:
             pass
