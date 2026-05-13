@@ -128,6 +128,23 @@ def set_lang(owner_id: str, lang: str):
     _save(data)
 
 
+def get_last_athlete(owner_id: str) -> str:
+    """Return the last fully-resolved athlete name from this session."""
+    data  = _load()
+    entry = data.get(owner_id)
+    return entry.get("last_athlete", "") if entry else ""
+
+
+def set_last_athlete(owner_id: str, name: str):
+    """Persist the last resolved athlete name so follow-up messages can reference it."""
+    data  = _load()
+    entry = data.get(owner_id, {"history": [], "last_active": datetime.now().isoformat()})
+    entry["last_athlete"]  = name
+    entry["last_active"]   = datetime.now().isoformat()
+    data[owner_id] = entry
+    _save(data)
+
+
 def format_for_prompt(history: list[dict]) -> str:
     """
     Format history as a readable block for injection into a Gemini prompt.

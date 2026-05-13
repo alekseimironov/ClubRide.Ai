@@ -29,7 +29,7 @@ from .retriever import (
     get_weekend_priorities, clear_cache,
 )
 from .scorer import get_service_due
-from .session import get_history, add_turn, get_lang, set_lang
+from .session import get_history, add_turn, get_lang, set_lang, get_last_athlete, set_last_athlete
 from .feedback import log_action, build_alert
 from .strings import t
 from privacy_gate.masker import build_anonymiser
@@ -593,7 +593,8 @@ def _draft_whatsapp(name: str, signal: str, lang: str = "en",
 
 
 def _handle_draft_message(club_id: int, athlete_name: str,
-                          lang: str = "en", question: str = "") -> str:
+                          lang: str = "en", question: str = "",
+                          owner_id: str = "") -> str:
     p = get_athlete_profile(club_id, athlete_name)
 
     if p.get("data_quality") == "ambiguous":
@@ -605,6 +606,8 @@ def _handle_draft_message(club_id: int, athlete_name: str,
         return t("draft_not_found", lang, name=athlete_name)
 
     name    = p.get("name", athlete_name)
+    if owner_id and name:
+        set_last_athlete(owner_id, name)
     svc_due = p.get("service_due", False)
     chn_due = p.get("chain_due", False)
     svc_km  = float(p.get("km_since_service", 0) or 0)
@@ -975,7 +978,7 @@ def _fmt_briefing(club_id: int, lang: str = "en") -> str:
 
 def _handle_athlete(club_id: int, athlete_name: str,
                     question: str, history: list[dict],
-                    lang: str = "en") -> str:
+                    lang: str = "en", owner_id: str = "") -> str:
     p = get_athlete_profile(club_id, athlete_name)
 
     if p.get("data_quality") == "ambiguous":
@@ -987,6 +990,8 @@ def _handle_athlete(club_id: int, athlete_name: str,
         return t("profile_not_found", lang, name=athlete_name)
 
     name   = p.get("name", athlete_name)
+    if owner_id and name:
+        set_last_athlete(owner_id, name)
     ev     = p.get("events_count", 0)
     first  = p.get("first_seen", "")
     last   = p.get("last_seen", "")
@@ -1088,15 +1093,18 @@ def _handle_athlete(club_id: int, athlete_name: str,
 
 def _execute_tool(tool_name: str, args: dict,
                   club_id: int, question: str,
-                  history: list[dict], lang: str = "en") -> str:
+                  history: list[dict], lang: str = "en",
+                  owner_id: str = "") -> str:
     if tool_name == "get_leaderboard":
         return _fmt_leaderboard(club_id, top_n=int(args.get("top_n", 10)), lang=lang)
 
     if tool_name == "get_athlete_profile":
-        return _handle_athlete(club_id, args.get("athlete_name", ""), question, history, lang=lang)
+        return _handle_athlete(club_id, args.get("athlete_name", ""), question, history,
+                               lang=lang, owner_id=owner_id)
 
     if tool_name == "draft_message":
-        return _handle_draft_message(club_id, args.get("athlete_name", ""), lang=lang, question=question)
+        return _handle_draft_message(club_id, args.get("athlete_name", ""), lang=lang,
+                                     question=question, owner_id=owner_id)
 
     if tool_name == "get_upgrade_candidates":
         return _fmt_upgrade(club_id, limit=int(args.get("limit", 8)), lang=lang)
@@ -1133,6 +1141,23 @@ def handle(message: str, owner_id: str,
     lang    = get_lang(owner_id)
 
     import re
+
+    # ── Resolve partial name from session context ─────────────────────────────
+    # If user says "draft for Simon" after previously resolving "Simon Rimaz",
+    # substitute the full name so the bot doesn't ask for disambiguation again.
+    last_athlete = get_last_athlete(owner_id)
+    if last_athlete:
+        first = last_athlete.split()[0].lower()
+        _m = message.lower()
+        if (first in _m and last_athlete.lower() not in _m
+                and re.search(r'\b' + re.escape(first) + r'\b', _m)):
+            message = re.sub(
+                r'\b' + re.escape(first) + r'\b',
+                last_athlete,
+                message,
+                count=1,
+                flags=re.IGNORECASE
+            )
 
     # Help
     if message.strip().lower() in ("help", "aide", "?", "commands", "menu"):
@@ -1255,7 +1280,7 @@ def handle(message: str, owner_id: str,
                     continue
                 args = {"athlete_name": name}
             try:
-                reply = _execute_tool(tool, args, club_id, message, history, lang=lang)
+                reply = _execute_tool(tool, args, club_id, message, history, lang=lang, owner_id=owner_id)
             except Exception as e:
                 print(f"  Keyword fallback error [{tool}]: {e}")
                 reply = t("error", lang)
@@ -1329,7 +1354,7 @@ def handle(message: str, owner_id: str,
                 print(f"  Gemini got: {fn.name}({raw_args})")
                 print(f"  Resolved  : {fn.name}({args})")
             try:
-                reply = _execute_tool(fn.name, args, club_id, message, history, lang=lang)
+                reply = _execute_tool(fn.name, args, club_id, message, history, lang=lang, owner_id=owner_id)
             except Exception:
                 reply = t("error", lang)
             add_turn(owner_id, message, reply)
