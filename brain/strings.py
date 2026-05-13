@@ -19,12 +19,11 @@ S: dict[str, dict[str, str]] = {
 
         # ── Help ─────────────────────────────────────────────────────────────
         "help": (
-            "🚴 *ClubRide.Ai* — TNCE club assistant\n"
+            "*TNCE | ClubRide.Ai* — your club assistant\n"
             "\n"
-            "*Club intelligence:*\n"
             "🏆 *top 10* — this week's leaderboard\n"
             "🎯 *who to talk to* — 2 weekend priorities\n"
-            "⭐ *upgrade* — riders ready for a new bike\n"
+            "🚲 *upgrade* — riders ready for a new bike\n"
             "🔧 *service* — bikes overdue for service or chain\n"
             "⚠️ *at risk* — loyal members going quiet\n"
             "👥 *recruit* — solo riders worth inviting\n"
@@ -43,9 +42,9 @@ S: dict[str, dict[str, str]] = {
             "  \"draft for Floor, mention new Canyon just arrived\"\n"
             "  \"draft for Thomas, we have 20% off service this week\"\n"
             "\n"
-            "*Langue / Language:*\n"
-            "🌐 lang fr — basculer en français\n"
-            "🌐 lang en — switch to English\n"
+            "*Language:*\n"
+            "🇬🇧 type in English → replies in English\n"
+            "🇫🇷 écris en français → réponses en français\n"
         ),
 
         # ── Leaderboard ──────────────────────────────────────────────────────
@@ -111,7 +110,7 @@ S: dict[str, dict[str, str]] = {
         "briefing_no_year":       "No year data yet",
         "briefing_top_year":      "Top {year}:",
         "briefing_loyal_header":  "\n*🏅 Most loyal members (active)*",
-        "briefing_upg_header":    "\n*⭐ Upgrade ({n})*",
+        "briefing_upg_header":    "\n*🚲 Upgrade ({n})*",
         "briefing_upg_none":      "\nUpgrade — none flagged",
         "briefing_svc_header":    "\n*🔧 Service Due ({n})*",
         "briefing_svc_clear":     "\nService — all clear",
@@ -194,12 +193,11 @@ S: dict[str, dict[str, str]] = {
 
         # ── Help ─────────────────────────────────────────────────────────────
         "help": (
-            "🚴 *ClubRide.Ai* — Assistant club TNCE\n"
+            "*TNCE | ClubRide.Ai* — ton assistant club\n"
             "\n"
-            "*Intelligence club :*\n"
             "🏆 *top 10* — classement de la semaine\n"
             "🎯 *qui contacter* — 2 priorités du week-end\n"
-            "⭐ *upgrade* — cyclistes prêts pour un nouveau vélo\n"
+            "🚲 *upgrade* — cyclistes prêts pour un nouveau vélo\n"
             "🔧 *service* — vélos en retard d'entretien ou de chaîne\n"
             "⚠️ *at risk* — membres fidèles qui s'éloignent\n"
             "👥 *recruit* — cyclistes solo à inviter\n"
@@ -218,9 +216,9 @@ S: dict[str, dict[str, str]] = {
             "  \"draft for Floor, mention nouveau Canyon arrivé\"\n"
             "  \"draft for Thomas, -20% sur le service cette semaine\"\n"
             "\n"
-            "*Langue / Language :*\n"
-            "🌐 lang fr — basculer en français\n"
-            "🌐 lang en — switch to English\n"
+            "*Langue :*\n"
+            "🇫🇷 écris en français → réponses en français\n"
+            "🇬🇧 type in English → replies in English\n"
         ),
 
         # ── Leaderboard ──────────────────────────────────────────────────────
@@ -286,7 +284,7 @@ S: dict[str, dict[str, str]] = {
         "briefing_no_year":       "Pas encore de données annuelles",
         "briefing_top_year":      "Top {year} :",
         "briefing_loyal_header":  "\n*🏅 Membres les plus fidèles (actifs)*",
-        "briefing_upg_header":    "\n*⭐ Upgrade ({n})*",
+        "briefing_upg_header":    "\n*🚲 Upgrade ({n})*",
         "briefing_upg_none":      "\nUpgrade — aucun signalé",
         "briefing_svc_header":    "\n*🔧 Service dû ({n})*",
         "briefing_svc_clear":     "\nService — tout est bon",

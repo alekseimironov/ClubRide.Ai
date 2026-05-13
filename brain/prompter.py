@@ -461,7 +461,7 @@ def _fmt_weekend_priorities(club_id: int, lang: str = "en") -> str:
         draft    = _draft_whatsapp(upgrade["name"], "upgrade", lang,
                                    weekly_km=wk, bike=bike, events=ev)
         lines.append(
-            f"⭐ *{upgrade['name']}*\n"
+            f"🚲 *{upgrade['name']}*\n"
             f"   Upgrade window · {wk:.0f}km/wk"
             f" · {bike}{km_str}{src_str} · {ev} events\n"
             f"   📱 _{draft}_"
@@ -1162,6 +1162,29 @@ def handle(message: str, owner_id: str,
         reply = t(f"lang_set_{_toggled}", lang)
         add_turn(owner_id, message, reply)
         return reply
+
+    # ── Auto language detection — switch silently based on message language ────
+    _FR_WORDS = re.compile(
+        r'\b(bonjour|salut|merci|oui|non|dis.moi|qui est|classement|pour|avec|'
+        r'les|des|une|est|pas|ça|voici|prochains|sorties|vélo|velo|cycliste|'
+        r'membres|fidèle|semaine|upgrade|rapport|briefing\s+fr|quelle|quels|'
+        r'combien|comment|pourquoi|montre|donne|fais|liste)\b',
+        re.IGNORECASE
+    )
+    _EN_WORDS = re.compile(
+        r'\b(hello|hi|hey|thanks|yes|no|tell|who|show|give|make|list|what|'
+        r'how|why|which|riders|members|leaderboard|service|upgrade|recruit|'
+        r'briefing|draft|profile)\b',
+        re.IGNORECASE
+    )
+    _fr_score = len(_FR_WORDS.findall(message))
+    _en_score = len(_EN_WORDS.findall(message))
+    if _fr_score > _en_score and lang != "fr":
+        set_lang(owner_id, "fr")
+        lang = "fr"
+    elif _en_score > _fr_score and lang != "en":
+        set_lang(owner_id, "en")
+        lang = "en"
 
     # Feedback reply (1-4 digit)
     if re.match(r"^\s*[1-4]\s*$", message.strip()):
