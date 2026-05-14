@@ -726,10 +726,11 @@ def _fmt_missed_upgrades(club_id: int, lang: str = "en") -> str:
     for u in upgrades:
         new_label = t("missed_new", lang)
         was_label = t("missed_was", lang)
+        source = "✓" if u.get("confirmed") else "est."
         lines.append(
             f"⬆️ *{u['name']}* · {u['weekly_km']:.0f} km/wk\n"
             f"  {new_label}: {u['new_bike']} · {u['new_tier']} · "
-            f"{u['new_km']:,.0f}km · est. {u['purchase_month']}\n"
+            f"{u['new_km']:,.0f}km · {source} {u['purchase_month']}\n"
             f"  {was_label}: {u['old_bike']} · {u['old_tier']} · {u['old_km']:,.0f}km"
         )
     return "\n".join(lines)

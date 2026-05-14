@@ -25,22 +25,24 @@ ROOT = Path(__file__).parent.parent
 # ── Fix 3: club_id → actual filenames ─────────────
 CLUB_FILES = {
     318940: {                               # TNCE
-        "leaderboard": "leaderboard.csv",
-        "attendance":  "historical_attendance.csv",
-        "activities":  "activities.csv",
-        "crm":         "crm.csv",
-        "profiles":    "athlete_resolved.csv",
-        "enriched":    "attendance_enriched.csv",
-        "bikes":       "athlete_bikes.csv",
+        "leaderboard":  "leaderboard.csv",
+        "attendance":   "historical_attendance.csv",
+        "activities":   "activities.csv",
+        "crm":          "crm.csv",
+        "profiles":     "athlete_resolved.csv",
+        "enriched":     "attendance_enriched.csv",
+        "bikes":        "athlete_bikes.csv",
+        "active_bikes": "active_bikes.csv",
     },
     1130145: {                              # Belga
-        "leaderboard": "belga_leaderboard.csv",
-        "attendance":  "historical_attendance_Belga.csv",
-        "activities":  "belga_activities.csv",
-        "crm":         "belga_crm.csv",
-        "profiles":    "athlete_resolved.csv",
-        "enriched":    "attendance_enriched.csv",
-        "bikes":       "athlete_bikes.csv",
+        "leaderboard":  "belga_leaderboard.csv",
+        "attendance":   "historical_attendance_Belga.csv",
+        "activities":   "belga_activities.csv",
+        "crm":          "belga_crm.csv",
+        "profiles":     "athlete_resolved.csv",
+        "enriched":     "attendance_enriched.csv",
+        "bikes":        "athlete_bikes.csv",
+        "active_bikes": "active_bikes.csv",
     },
 }
 
@@ -684,6 +686,15 @@ def get_missed_upgrades(club_id: int,
     if bikes_df.empty or prof_df.empty:
         return {"upgrades": [], "total": 0}
 
+    # Load confirmed active bikes from dedicated scraper (latest activity per athlete)
+    active_bike_map: dict[str, str] = {}
+    ab_df = _load_csv(p["active_bikes"])
+    if not ab_df.empty and "Active_Bike" in ab_df.columns:
+        for _, row in ab_df.iterrows():
+            bike = str(row.get("Active_Bike", "")).strip()
+            if bike and bike.lower() not in ("nan", ""):
+                active_bike_map[str(row["Athlete_ID"])] = bike
+
     bikes_df["Bike_Km"] = pd.to_numeric(bikes_df["Bike_Km"], errors="coerce").fillna(0)
 
     # Load bike tier classifications
@@ -785,14 +796,29 @@ def get_missed_upgrades(club_id: int,
         if len(classified) < 2:
             continue
 
-        # Current bike = first in garage order among the highest-tier bikes
-        # Strava orders the garage by last used — so first = most recently ridden
+        # Current bike — priority:
+        # 1. Active_Bike from latest activity (confirmed source of truth)
+        # 2. First in garage order among highest-tier bikes (Strava orders by last used)
         best_tier_rank = max(b["tier_rank"] for b in classified)
         if best_tier_rank == 0:
             continue
 
-        top_bikes  = [b for b in classified if b["tier_rank"] == best_tier_rank]
-        new_bike   = top_bikes[0]  # first by garage order = last used
+        top_bikes = [b for b in classified if b["tier_rank"] == best_tier_rank]
+
+        confirmed = False
+        active_name = active_bike_map.get(aid, "").lower()
+        if active_name:
+            # Try to match Active_Bike name against classified bikes
+            active_match = next(
+                (b for b in classified if active_name in b["name"].lower()
+                 or b["name"].lower() in active_name), None
+            )
+            if active_match:
+                new_bike  = active_match
+                confirmed = True
+
+        if not confirmed:
+            new_bike = top_bikes[0]  # garage order fallback
 
         # Reference = highest-km road bike that is not the current bike
         others     = [b for b in classified if b["name"] != new_bike["name"]]
@@ -840,6 +866,7 @@ def get_missed_upgrades(club_id: int,
             "old_bike":       old_bike.get("display_name", old_bike["name"]),
             "old_tier":       old_bike["tier"],
             "old_km":         round(ref_km, 0),
+            "confirmed":      confirmed,
         })
 
     results.sort(key=lambda x: x["new_km"])
