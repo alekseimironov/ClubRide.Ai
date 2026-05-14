@@ -521,10 +521,54 @@ def get_upgrade_candidates(club_id: int, limit: int = 10) -> dict:
     Profile data enriches where available.
     Attendance-only members with 5+ events flagged for conversation even without profile.
     """
+    import json as _json
     p       = _paths(club_id)
     enr_df  = _load_csv(p["enriched"])
     prof_df = _load_csv(p["profiles"])
     crm_df  = _load_csv(p["crm"])
+    bikes_df = _load_csv(p["bikes"])
+
+    # Load bike classifications for display_bike logic
+    _classif: dict = {}
+    try:
+        _cp = ROOT / "data" / "synthetic" / "bike_classifications.json"
+        with open(_cp, encoding="utf-8") as _f:
+            for _c in _json.load(_f):
+                _classif[_c["name"].lower()] = _c
+    except Exception:
+        pass
+
+    # Build per-athlete garage: Athlete_ID → list of (name, km, display_name, category)
+    _garage: dict = {}
+    if not bikes_df.empty:
+        bikes_df = bikes_df.copy()
+        bikes_df["Bike_Km"] = pd.to_numeric(bikes_df["Bike_Km"], errors="coerce").fillna(0)
+        for _aid, _grp in bikes_df.groupby("Athlete_ID"):
+            _garage[str(_aid)] = [
+                {
+                    "name": str(_r["Bike_Name"]),
+                    "km":   float(_r["Bike_Km"]),
+                    "cls":  _classif.get(str(_r["Bike_Name"]).lower(), {}),
+                }
+                for _, _r in _grp.iterrows()
+            ]
+
+    def _best_display_bike(athlete_id: str, fallback_name: str, fallback_km: float):
+        """Highest-km road bike that is not a custom name and not MTB/indoor."""
+        candidates = []
+        for b in _garage.get(str(athlete_id), []):
+            dn  = b["cls"].get("display_name", b["name"])
+            cat = b["cls"].get("category", "unknown")
+            if cat in ("mtb", "indoor"):
+                continue
+            if "custom name" in dn.lower():
+                continue
+            candidates.append((b["km"], b["name"], dn))
+        if candidates:
+            candidates.sort(reverse=True)
+            _, bname, dn = candidates[0]
+            return dn, candidates[0][0]
+        return fallback_name, fallback_km
 
     if enr_df.empty:
         return {"candidates": [], "total": 0}
@@ -588,6 +632,7 @@ def get_upgrade_candidates(club_id: int, limit: int = 10) -> dict:
         weekly_km    = float(profile["Weekly_km"])           if has_profile else 0
         fleet_km     = float(profile.get("fleet_km") or 0)  if has_profile else 0
         primary_bike = str(profile.get("primary_bike", "")) if has_profile else ""
+        athlete_id   = str(profile.get("Athlete_ID", ""))   if has_profile else ""
         km_source    = "real"
         speed_est    = 0.0
 
@@ -643,6 +688,8 @@ def get_upgrade_candidates(club_id: int, limit: int = 10) -> dict:
                         inferred_tier = bt
 
         primary_bike_km = float(profile.get("primary_bike_km") or 0) if has_profile else 0
+        raw_bike        = primary_bike if has_profile else inferred_bike
+        disp_bike, disp_km = _best_display_bike(athlete_id, raw_bike, primary_bike_km)
         results.append({
             "name":            name,
             "weekly_km":       weekly_km,
@@ -651,7 +698,9 @@ def get_upgrade_candidates(club_id: int, limit: int = 10) -> dict:
             "primary_bike_km": primary_bike_km,
             "fleet_km":        fleet_km,
             "rider_tier":      rider_tier,
-            "primary_bike":    primary_bike if has_profile else inferred_bike,
+            "primary_bike":    raw_bike,
+            "display_bike":    disp_bike,
+            "display_bike_km": disp_km,
             "primary_tier":    primary_tier if has_profile else inferred_tier,
             "bike_source":     "real" if has_profile else ("inferred" if inferred_bike else "unknown"),
             "events_count":    events_count,

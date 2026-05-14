@@ -419,7 +419,7 @@ def _fmt_upgrade(club_id: int, limit: int = 8, lang: str = "en") -> str:
         km_src = c.get("km_source", "real")
         wk_str = t("upg_km_wk_est", lang, wk=wk) if km_src == "estimated" else t("upg_km_wk", lang, wk=wk)
 
-        bike      = c.get("primary_bike") or ""
+        bike      = c.get("display_bike") or c.get("primary_bike") or ""
         bk_src    = c.get("bike_source", "unknown")
         has_bike  = bool(bike and bike not in ("nan", "unknown", ""))
         if not has_bike:
@@ -432,7 +432,7 @@ def _fmt_upgrade(club_id: int, limit: int = 8, lang: str = "en") -> str:
         pt = c.get("primary_tier") or ""
         tier_str = f"({pt} tier)" if pt and pt not in ("nan", "unknown", "") else ""
 
-        bike_km  = float(c.get("primary_bike_km") or 0)
+        bike_km  = float(c.get("display_bike_km") or c.get("primary_bike_km") or 0)
         km_str   = f" · {t('upg_km_on_bike', lang, km=bike_km)}" if bk_src == "real" and bike_km > 0 else ""
 
         spd = float(c.get("speed_est") or 0)
@@ -468,10 +468,10 @@ def _fmt_weekend_priorities(club_id: int, lang: str = "en") -> str:
     lines = [t("wp_header", lang) + "\n"]
 
     if upgrade:
-        bike     = upgrade.get("primary_bike") or ""
-        bike     = "bike" if not bike or bike in ("nan", "unknown") else bike
-        fleet_km = float(upgrade.get("fleet_km") or 0)
-        km_str   = f" · {fleet_km:,.0f}km" if fleet_km > 0 else ""
+        bike    = upgrade.get("display_bike") or upgrade.get("primary_bike") or ""
+        bike    = "bike" if not bike or bike in ("nan", "unknown") else bike
+        bike_km = float(upgrade.get("display_bike_km") or upgrade.get("primary_bike_km") or 0)
+        km_str  = f" · {bike_km:,.0f}km" if bike_km > 0 else ""
         ev       = int(upgrade.get("events_count") or 0)
         src      = upgrade.get("purchase_source", "")
         yr       = upgrade.get("purchase_year", "")
