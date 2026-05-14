@@ -119,9 +119,9 @@ def save_batch(rows: list[dict]):
     final.to_csv(OUT_CSV, index=False)
 
 
-def run():
+def run(only_athlete: str = "", limit: int = 0):
     print(f"\n{'='*60}")
-    print(f"  🚲 ACTIVE BIKE SCRAPER")
+    print(f"  ACTIVE BIKE SCRAPER")
     print(f"{'='*60}\n")
 
     # Load athletes with bikes only
@@ -132,11 +132,21 @@ def run():
     profiles["Bike_Count"] = pd.to_numeric(profiles["Bike_Count"], errors="coerce").fillna(0)
     target = profiles[profiles["Athlete_ID"].astype(str).isin(athletes_with_bikes)].copy()
 
-    done    = already_done()
-    pending = target[~target["Athlete_ID"].astype(str).isin(done)]
+    # --athlete: run for one specific athlete (re-scrape even if already done)
+    if only_athlete:
+        target  = target[target["Athlete_ID"].astype(str) == only_athlete]
+        pending = target
+        print(f"  Mode: single athlete {only_athlete}\n")
+    else:
+        done    = already_done()
+        pending = target[~target["Athlete_ID"].astype(str).isin(done)]
+        if limit > 0:
+            pending = pending.head(limit)
+            print(f"  Mode: first {limit} pending athletes\n")
 
     print(f"  Athletes with bikes  : {len(target)}")
-    print(f"  Already scraped      : {len(done)}")
+    if not only_athlete:
+        print(f"  Already scraped      : {len(already_done())}")
     print(f"  Remaining            : {len(pending)}\n")
 
     if pending.empty:
@@ -231,4 +241,11 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    import sys
+    _athlete = ""
+    _limit   = 0
+    if "--athlete" in sys.argv:
+        _athlete = sys.argv[sys.argv.index("--athlete") + 1]
+    if "--limit" in sys.argv:
+        _limit = int(sys.argv[sys.argv.index("--limit") + 1])
+    run(only_athlete=_athlete, limit=_limit)
