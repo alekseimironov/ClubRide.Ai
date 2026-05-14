@@ -161,7 +161,9 @@ def run():
             return
         print("✅ Session valid\n")
 
-        total = len(pending)
+        total       = len(pending)
+        consec_fail = 0   # consecutive failures counter
+
         for i, (_, row) in enumerate(pending.iterrows(), 1):
             athlete_id = str(row["Athlete_ID"])
             name       = str(row.get("Name", ""))
@@ -172,10 +174,12 @@ def run():
 
             if bike:
                 print(f"→ {bike}")
-                scraped += 1
+                scraped     += 1
+                consec_fail  = 0   # reset on success
             else:
                 print(f"→ no bike found (private activity or no gear set)")
-                no_bike += 1
+                no_bike    += 1
+                consec_fail += 1
 
             rows.append({
                 "Athlete_ID":   athlete_id,
@@ -191,13 +195,19 @@ def run():
                 rows = []
 
             if i < total:
-                delay = random.uniform(10, 18)
-                # Extra pause every 20 athletes to avoid session throttling
-                if i % 20 == 0:
-                    print(f"  ⏸️  Cooling down 60s after {i} athletes...")
-                    time.sleep(60)
+                # Strava throttle detection — 3+ consecutive failures = rate limited
+                if consec_fail >= 3:
+                    wait = 300  # 5 minutes
+                    print(f"  🚨 Strava throttling detected — pausing {wait}s...")
+                    time.sleep(wait)
+                    consec_fail = 0
+                elif i % 15 == 0:
+                    # Proactive cooldown every 15 athletes (before throttle kicks in)
+                    wait = random.randint(120, 180)
+                    print(f"  ⏸️  Cooldown {wait}s after {i} athletes...")
+                    time.sleep(wait)
                 else:
-                    time.sleep(delay)
+                    time.sleep(random.uniform(14, 22))
 
         browser.close()
 
