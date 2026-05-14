@@ -887,7 +887,9 @@ def get_missed_upgrades(club_id: int,
                       "race bike", "my bike", "road bike", "gravel bike",
                       "brompton", "folding", "commuter", "urban", "coffee",
                       "city bike", "cargo", "track bike", "tt bike",
-                      "time trial", "triathlon")
+                      "time trial", "triathlon",
+                      "· exclude", "loan bike", "rental bike", "borrowed bike",
+                      "geleende", "prêt", "notmine")
 
         # Classify all bikes — road only, known tier only, no indoor/MTB/custom names
         classified = []
