@@ -116,6 +116,8 @@ def save_batch(rows: list[dict]):
         final    = pd.concat([existing, new_df], ignore_index=True)
     except FileNotFoundError:
         final = new_df
+    # Keep latest entry per athlete — removes duplicates from re-runs
+    final = final.drop_duplicates(subset="Athlete_ID", keep="last")
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     final.to_csv(OUT_CSV, index=False)
 
@@ -208,8 +210,8 @@ def run(only_athlete: str = "", limit: int = 0):
                 "Scraped_At":   datetime.now().strftime("%Y-%m-%d %H:%M"),
             })
 
-            # Save every 10 athletes (resume safety)
-            if len(rows) % 10 == 0:
+            # Save every 3 athletes — minimize data loss on crash/throttle
+            if len(rows) % 3 == 0:
                 save_batch(rows)
                 rows = []
 
