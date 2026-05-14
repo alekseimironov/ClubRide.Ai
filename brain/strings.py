@@ -173,7 +173,7 @@ S: dict[str, dict[str, str]] = {
         "missed_none":    "No recent upgrades detected — all clear.",
         "missed_header":  "🎯 *Missed Upgrades ({n})*",
         "missed_sub":     "_Riders who recently upgraded — not through the shop_",
-        "missed_new":     "New",
+        "missed_new":     "Now",
         "missed_was":     "Was",
 
         # ── Feedback replies ─────────────────────────────────────────────────
@@ -351,7 +351,7 @@ S: dict[str, dict[str, str]] = {
         "missed_none":    "Aucun upgrade récent détecté — tout est bon.",
         "missed_header":  "🎯 *Upgrades manqués ({n})*",
         "missed_sub":     "_Cyclistes qui ont récemment upgradé — pas via la boutique_",
-        "missed_new":     "Nouveau",
+        "missed_new":     "Maintenant",
         "missed_was":     "Avant",
 
         # ── Feedback replies ─────────────────────────────────────────────────

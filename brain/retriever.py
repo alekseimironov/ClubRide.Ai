@@ -781,16 +781,16 @@ def get_missed_upgrades(club_id: int,
         if len(classified) < 2:
             continue
 
-        # Highest-tier bike (prefer top tier with lowest km as "newest")
+        # Current bike = first in garage order among the highest-tier bikes
+        # Strava orders the garage by last used — so first = most recently ridden
         best_tier_rank = max(b["tier_rank"] for b in classified)
         if best_tier_rank == 0:
             continue
 
-        # Among highest-tier bikes, pick the one with lowest km (most recently bought)
         top_bikes  = [b for b in classified if b["tier_rank"] == best_tier_rank]
-        new_bike   = min(top_bikes, key=lambda b: b["km"])
+        new_bike   = top_bikes[0]  # first by garage order = last used
 
-        # Reference = highest-km bike that is not the new bike
+        # Reference = highest-km road bike that is not the current bike
         others     = [b for b in classified if b["name"] != new_bike["name"]]
         if not others:
             continue
