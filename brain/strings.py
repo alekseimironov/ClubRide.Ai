@@ -135,6 +135,7 @@ S: dict[str, dict[str, str]] = {
         "profile_first":         "first {date}",
         "profile_svc_alert":     "service due ({km:,.0f}km since last)",
         "profile_chn_alert":     "chain due ({km:,.0f}km since last)",
+        "profile_gear_hidden":   "🔒 Gear hidden on Strava — worth asking directly about their setup",
 
         # ── Draft ────────────────────────────────────────────────────────────
         "draft_header":       "*Draft for {first}* ({reason})\n\n{draft}\n\n",
@@ -313,6 +314,7 @@ S: dict[str, dict[str, str]] = {
         "profile_first":         "première fois {date}",
         "profile_svc_alert":     "service dû ({km:,.0f}km depuis dernier)",
         "profile_chn_alert":     "chaîne due ({km:,.0f}km depuis dernière)",
+        "profile_gear_hidden":   "🔒 Équipement masqué sur Strava — vaut la peine de demander directement",
 
         # ── Draft ────────────────────────────────────────────────────────────
         "draft_header":       "*Message pour {first}* ({reason})\n\n{draft}\n\n",

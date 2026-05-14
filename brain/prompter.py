@@ -1102,7 +1102,9 @@ def _handle_athlete(club_id: int, athlete_name: str,
         bike_parts.append(t("profile_bought", lang, src=src, date=purchase_str))
     elif src:
         bike_parts.append(t("profile_bought_nodate", lang, src=src))
-    if bike_parts:
+    if not bike:
+        lines.append(t("profile_gear_hidden", lang))
+    elif bike_parts:
         lines.append("  ·  ".join(bike_parts))
 
     ev_line = t("profile_events", lang, n=ev)
