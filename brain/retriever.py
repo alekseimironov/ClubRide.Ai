@@ -18,6 +18,8 @@ import unicodedata
 from datetime import date, timedelta
 from pathlib import Path
 
+from rapidfuzz import fuzz as _fuzz
+
 import pandas as pd
 
 ROOT = Path(__file__).parent.parent
@@ -137,23 +139,39 @@ def _fuzzy_norm(name: str) -> tuple[str, str]:
 def _match_athlete(target: str, candidates: pd.Series) -> pd.Series:
     """
     Match target name against a Series of candidate names.
+
     Step 1: exact normalised match
-    Step 2: fuzzy first-name + last-initial match
-    Returns boolean mask.
+    Step 2: token_set_ratio >= 80  → handles surname queries and partial names
+            e.g. 'Girard' matches 'François Girard' (score 100)
+    Step 3: word-level ratio >= 78 → handles typos against any word in the name
+            e.g. 'Krstik' matches 'krstic' (score 83), 'Girad' → 'girard' (91)
+            guards: query < 4 chars → exact only (avoids false positives)
     """
     target_norm = _norm(target)
-    exact = candidates.apply(_norm) == target_norm
+    all_norms   = candidates.apply(_norm)
+
+    # Step 1: exact
+    exact = all_norms == target_norm
     if exact.any():
         return exact
 
-    # Fuzzy fallback
-    t_first, t_initial = _fuzzy_norm(target)
-    def fuzzy(name):
-        c_first, c_initial = _fuzzy_norm(name)
-        return (c_first == t_first and
-                (c_initial == t_initial or not t_initial or not c_initial))
+    if len(target_norm) < 4:
+        return pd.Series([False] * len(candidates), index=candidates.index)
 
-    return candidates.apply(fuzzy)
+    def _score(candidate_norm: str) -> float:
+        # Path A: token set — handles surname-only and partial name queries
+        ts = _fuzz.token_set_ratio(target_norm, candidate_norm)
+        if ts >= 80:
+            return ts
+        # Path B: word-level ratio — handles typos in first or last name
+        best = max(
+            (_fuzz.ratio(target_norm, w) for w in candidate_norm.split()),
+            default=0
+        )
+        return best if best >= 78 else 0.0
+
+    scores = all_norms.apply(_score)
+    return scores > 0
 
 
 # ── Fix 6: shared leaderboard loader ─────────────
