@@ -31,6 +31,7 @@ CLUB_FILES = {
         "crm":         "crm.csv",
         "profiles":    "athlete_resolved.csv",
         "enriched":    "attendance_enriched.csv",
+        "bikes":       "athlete_bikes.csv",
     },
     1130145: {                              # Belga
         "leaderboard": "belga_leaderboard.csv",
@@ -39,6 +40,7 @@ CLUB_FILES = {
         "crm":         "belga_crm.csv",
         "profiles":    "athlete_resolved.csv",
         "enriched":    "attendance_enriched.csv",
+        "bikes":       "athlete_bikes.csv",
     },
 }
 
@@ -659,6 +661,160 @@ def get_upgrade_candidates(club_id: int, limit: int = 10) -> dict:
     # Sort: most events first, then weekly km
     results.sort(key=lambda c: (-c["events_count"], -c["weekly_km"]))
     return {"candidates": results[:limit], "total": len(results)}
+
+
+# ── Missed upgrades ────────────────────────────────
+def get_missed_upgrades(club_id: int,
+                        new_bike_ratio: float = 0.25,
+                        min_ref_km: float = 2000.0,
+                        limit: int = 15) -> dict:
+    """
+    Detect community athletes who recently upgraded to a higher-tier bike.
+    Signal: highest-tier bike has km < 25% of highest-km bike in same garage.
+    Estimates purchase month using Swiss seasonal riding patterns.
+    """
+    import json as _json
+    import calendar as _cal
+
+    p        = _paths(club_id)
+    prof_df  = _load_csv(p["profiles"])
+    bikes_df = _load_csv(p["bikes"])
+    enr_df   = _load_csv(p["enriched"])
+
+    if bikes_df.empty or prof_df.empty:
+        return {"upgrades": [], "total": 0}
+
+    bikes_df["Bike_Km"] = pd.to_numeric(bikes_df["Bike_Km"], errors="coerce").fillna(0)
+
+    # Load bike tier classifications
+    classif_path = ROOT / "data" / "synthetic" / "bike_classifications.json"
+    classif_map: dict = {}
+    try:
+        with open(classif_path, encoding="utf-8") as f:
+            for c in _json.load(f):
+                classif_map[c["name"].lower()] = c
+    except Exception as e:
+        print(f"  ⚠️  bike_classifications load error: {e}")
+
+    # Community member norms
+    community_norms: set[str] = set()
+    if not enr_df.empty:
+        for col in ("Athlete_Raw", "Matched_Name"):
+            if col in enr_df.columns:
+                for n in enr_df[col].dropna():
+                    community_norms.add(_norm(str(n)))
+
+    prof_df["Weekly_km"] = pd.to_numeric(prof_df["Weekly_km"], errors="coerce").fillna(0)
+    prof_by_id = prof_df.set_index("Athlete_ID").to_dict("index")
+
+    TIER_RANK = {"top": 3, "mid": 2, "entry": 1, "unknown": 0}
+
+    # Swiss seasonal monthly km factor relative to peak summer
+    SEASONAL = {1: 0.35, 2: 0.40, 3: 0.65, 4: 0.80, 5: 0.90,
+                6: 1.00, 7: 1.00, 8: 0.95, 9: 0.85, 10: 0.70,
+                11: 0.45, 12: 0.35}
+
+    def estimate_purchase_month(new_km: float, weekly_km: float) -> str:
+        if weekly_km <= 0:
+            return "unknown"
+        remaining = new_km
+        yr, mo = date.today().year, date.today().month
+        for _ in range(36):
+            days       = _cal.monthrange(yr, mo)[1]
+            monthly_km = (days / 7) * weekly_km * SEASONAL.get(mo, 0.7)
+            if remaining <= monthly_km:
+                return date(yr, mo, 1).strftime("%b %Y")
+            remaining -= monthly_km
+            mo -= 1
+            if mo == 0:
+                mo, yr = 12, yr - 1
+        return "2+ years ago"
+
+    results = []
+
+    for athlete_id, group in bikes_df.groupby("Athlete_ID"):
+        aid     = str(athlete_id)
+        profile = prof_by_id.get(aid)
+        if not profile:
+            continue
+
+        name      = str(profile.get("Name", ""))
+        norm_name = _norm(name)
+
+        if norm_name in _NO_SIGNAL:
+            continue
+
+        # Only community members (attended at least one event)
+        fn1, i1 = _fuzzy_norm(norm_name)
+        in_community = norm_name in community_norms or any(
+            _fuzzy_norm(cn) == (fn1, i1) for cn in community_norms
+        )
+        if not in_community:
+            continue
+
+        # Classify all bikes with km > 0
+        classified = []
+        for _, row in group.iterrows():
+            bname = str(row["Bike_Name"])
+            bkm   = float(row["Bike_Km"])
+            if bkm <= 0:
+                continue
+            cls  = classif_map.get(bname.lower(), {})
+            tier = cls.get("tier", "unknown")
+            classified.append({
+                "name":      bname,
+                "km":        bkm,
+                "tier":      tier,
+                "tier_rank": TIER_RANK.get(tier, 0),
+            })
+
+        if len(classified) < 2:
+            continue
+
+        # Highest-tier bike (prefer top tier with lowest km as "newest")
+        best_tier_rank = max(b["tier_rank"] for b in classified)
+        if best_tier_rank == 0:
+            continue
+
+        # Among highest-tier bikes, pick the one with lowest km (most recently bought)
+        top_bikes  = [b for b in classified if b["tier_rank"] == best_tier_rank]
+        new_bike   = min(top_bikes, key=lambda b: b["km"])
+
+        # Reference = highest-km bike that is not the new bike
+        others     = [b for b in classified if b["name"] != new_bike["name"]]
+        if not others:
+            continue
+        old_bike   = max(others, key=lambda b: b["km"])
+
+        ref_km = old_bike["km"]
+        new_km = new_bike["km"]
+
+        # Apply thresholds
+        if ref_km < min_ref_km:
+            continue
+        if new_km / ref_km > new_bike_ratio:
+            continue
+        # New bike must be higher tier than old bike (genuine upgrade)
+        if new_bike["tier_rank"] <= old_bike["tier_rank"]:
+            continue
+
+        weekly_km      = float(profile.get("Weekly_km") or 60)
+        purchase_month = estimate_purchase_month(new_km, weekly_km)
+
+        results.append({
+            "name":           name,
+            "weekly_km":      round(weekly_km, 0),
+            "new_bike":       new_bike["name"],
+            "new_tier":       new_bike["tier"],
+            "new_km":         round(new_km, 0),
+            "purchase_month": purchase_month,
+            "old_bike":       old_bike["name"],
+            "old_tier":       old_bike["tier"],
+            "old_km":         round(ref_km, 0),
+        })
+
+    results.sort(key=lambda x: x["new_km"])
+    return {"upgrades": results[:limit], "total": len(results)}
 
 
 def get_at_risk_members(club_id: int,

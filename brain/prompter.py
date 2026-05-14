@@ -26,7 +26,7 @@ from .retriever import (
     get_athlete_profile, get_upgrade_candidates,
     get_at_risk_members, get_club_tier_summary,
     get_potential_recruits, get_week_attendees,
-    get_weekend_priorities, clear_cache,
+    get_weekend_priorities, get_missed_upgrades, clear_cache,
 )
 from .scorer import get_service_due
 from .session import get_history, add_turn, get_lang, set_lang, get_last_athlete, set_last_athlete
@@ -217,6 +217,18 @@ _TOOLS = types.Tool(function_declarations=[
     ),
 
     types.FunctionDeclaration(
+        name="get_missed_upgrades",
+        description=(
+            "Show athletes who recently upgraded to a higher-tier bike — not through the shop. "
+            "Detects new high-tier bikes with low km compared to older bikes in the same garage. "
+            "Estimates purchase month using seasonal riding patterns. "
+            "Use for: 'missed opportunity', 'missed upgrades', 'who upgraded elsewhere', "
+            "'external upgrades', 'opportunités manquées', 'qui a upgradé sans nous'."
+        ),
+        parameters=types.Schema(type=types.Type.OBJECT, properties={})
+    ),
+
+    types.FunctionDeclaration(
         name="show_help",
         description=(
             "Show the command menu. Use this when the message is off-topic, "
@@ -245,7 +257,8 @@ Tool selection rules (apply in order, stop at first match):
 7. Asks who to contact or priorities for this weekend → get_weekend_priorities
 8. Asks about recruiting solo riders → get_potential_recruits
 9. Asks about loyal members, top attendees, most active, community leaders → get_loyal_members
-10. Explicitly says "briefing", "weekly report", "résumé", or "full report" → get_briefing
+10. Asks about missed upgrades, who upgraded elsewhere, external bike purchases, opportunités manquées → get_missed_upgrades
+11. Explicitly says "briefing", "weekly report", "résumé", or "full report" → get_briefing
 10. Anything else — off-topic, unclear, general question, chitchat, member list requests → show_help
 
 get_briefing is NOT a member directory. Never use it to answer "list of members" or "full list" requests.
@@ -700,6 +713,28 @@ def _fmt_loyal(club_id: int, limit: int = 10, lang: str = "en") -> str:
     return "\n".join(lines)
 
 
+def _fmt_missed_upgrades(club_id: int, lang: str = "en") -> str:
+    data     = get_missed_upgrades(club_id)
+    upgrades = data.get("upgrades", [])
+    if not upgrades:
+        return t("missed_none", lang)
+
+    lines = [
+        t("missed_header", lang, n=len(upgrades)),
+        t("missed_sub", lang) + "\n",
+    ]
+    for u in upgrades:
+        new_label = t("missed_new", lang)
+        was_label = t("missed_was", lang)
+        lines.append(
+            f"⬆️ *{u['name']}* · {u['weekly_km']:.0f} km/wk\n"
+            f"  {new_label}: {u['new_bike']} · {u['new_tier']} · "
+            f"{u['new_km']:,.0f}km · est. {u['purchase_month']}\n"
+            f"  {was_label}: {u['old_bike']} · {u['old_tier']} · {u['old_km']:,.0f}km"
+        )
+    return "\n".join(lines)
+
+
 _weather_cache: dict = {}
 
 def _fetch_weather(lat: float, lon: float) -> dict:
@@ -1124,6 +1159,9 @@ def _execute_tool(tool_name: str, args: dict,
     if tool_name == "get_loyal_members":
         return _fmt_loyal(club_id, limit=int(args.get("limit", 10)), lang=lang)
 
+    if tool_name == "get_missed_upgrades":
+        return _fmt_missed_upgrades(club_id, lang=lang)
+
     if tool_name == "get_briefing":
         return _fmt_briefing(club_id, lang=lang)
 
@@ -1261,8 +1299,11 @@ def handle(message: str, owner_id: str,
         "draft for":     ("draft_message", {}),
         "message for":   ("draft_message", {}),
         "write to":      ("draft_message", {}),
-        "loyal":         ("get_loyal_members", {}),
-        "top members":   ("get_loyal_members", {}),
+        "loyal":             ("get_loyal_members", {}),
+        "top members":       ("get_loyal_members", {}),
+        "missed":            ("get_missed_upgrades", {}),
+        "missed opportunity":("get_missed_upgrades", {}),
+        "opportunit":        ("get_missed_upgrades", {}),
         "briefing":      ("get_briefing", {}),
         "résumé":        ("get_briefing", {}),
         "weekly report": ("get_briefing", {}),

@@ -37,10 +37,6 @@ S: dict[str, dict[str, str]] = {
             "*Personalised messages:*\n"
             "✉️ \"draft for [name]\" — auto-detects signal (upgrade / service / re-engage)\n"
             "✉️ \"draft for [name], mention [your note]\" — add your own angle\n"
-            "_Examples:_\n"
-            "  \"draft for Tomasz\"\n"
-            "  \"draft for Floor, mention new Canyon just arrived\"\n"
-            "  \"draft for Thomas, we have 20% off service this week\"\n"
             "\n"
             "*Language:*\n"
             "🇬🇧 type in English → replies in English\n"
@@ -172,6 +168,13 @@ S: dict[str, dict[str, str]] = {
             "would love to catch up at the shop."
         ),
 
+        # ── Missed upgrades ──────────────────────────────────────────────────
+        "missed_none":    "No recent upgrades detected — all clear.",
+        "missed_header":  "🎯 *Missed Upgrades ({n})*",
+        "missed_sub":     "_Riders who recently upgraded — not through the shop_",
+        "missed_new":     "New",
+        "missed_was":     "Was",
+
         # ── Feedback replies ─────────────────────────────────────────────────
         "feedback_logged":     "Got it — logged '{action}' for {athlete}.",
         "feedback_no_context": "Reply 1-4 after an alert, or ask me anything about the club.",
@@ -211,10 +214,6 @@ S: dict[str, dict[str, str]] = {
             "*Messages personnalisés :*\n"
             "✉️ \"draft for [nom]\" — détecte le signal (upgrade / service / réengagement)\n"
             "✉️ \"draft for [nom], mention [ta note]\" — ajoute ton angle\n"
-            "_Exemples :_\n"
-            "  \"draft for Tomasz\"\n"
-            "  \"draft for Floor, mention nouveau Canyon arrivé\"\n"
-            "  \"draft for Thomas, -20% sur le service cette semaine\"\n"
             "\n"
             "*Langue :*\n"
             "🇫🇷 écris en français → réponses en français\n"
@@ -345,6 +344,13 @@ S: dict[str, dict[str, str]] = {
             "Hey {first}, on ne t'a plus vu récemment — "
             "viens donc faire un tour en boutique."
         ),
+
+        # ── Missed upgrades ──────────────────────────────────────────────────
+        "missed_none":    "Aucun upgrade récent détecté — tout est bon.",
+        "missed_header":  "🎯 *Upgrades manqués ({n})*",
+        "missed_sub":     "_Cyclistes qui ont récemment upgradé — pas via la boutique_",
+        "missed_new":     "Nouveau",
+        "missed_was":     "Avant",
 
         # ── Feedback replies ─────────────────────────────────────────────────
         "feedback_logged":     "Noté — '{action}' enregistré pour {athlete}.",
