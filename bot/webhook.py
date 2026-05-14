@@ -15,6 +15,7 @@ Flow:
 """
 
 import os
+import re
 import xml.sax.saxutils as saxutils
 from pathlib import Path
 
@@ -24,6 +25,28 @@ from flask import Blueprint, request, make_response
 from brain.prompter      import handle
 from brain.session       import get_lang
 from bot.whatsapp_sender import send
+
+# Quick language peek — mirrors the detection in prompter.py
+# Used to show the right indicator BEFORE handle() runs auto-detection
+_FR_PEEK = re.compile(
+    r'\b(bonjour|salut|merci|dis.moi|classement|vélo|velo|fidèle|'
+    r'prochains|sorties|membres|qui est|pour quoi|comment|donne|montre)\b',
+    re.IGNORECASE
+)
+_EN_PEEK = re.compile(
+    r'\b(hello|hi|hey|who|show|tell|what|how|leaderboard|'
+    r'upgrade|recruit|briefing|draft|service|loyal|profile)\b',
+    re.IGNORECASE
+)
+
+def _peek_lang(message: str, current_lang: str) -> str:
+    fr = len(_FR_PEEK.findall(message))
+    en = len(_EN_PEEK.findall(message))
+    if fr > en:
+        return "fr"
+    if en > fr:
+        return "en"
+    return current_lang
 
 ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
@@ -61,8 +84,8 @@ def whatsapp_webhook():
     if not body:
         return _twiml("I received an empty message. Type *help* for commands.")
 
-    # ── Thinking indicator — language-aware ───────────
-    lang = get_lang(from_number)
+    # ── Thinking indicator — peek at message language before handle() runs ──
+    lang = _peek_lang(body, get_lang(from_number))
     send(from_number, "_Réflexion..._" if lang == "fr" else "_Thinking..._")
 
     # ── Process + reply via proactive send (independent of Twilio timeout) ──
