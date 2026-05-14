@@ -42,6 +42,11 @@ CLUB_ID  = 318940
 
 # ── Tool definitions ───────────────────────────────────────────────────────────
 
+_LANG_PARAM = types.Schema(
+    type=types.Type.STRING,
+    description='Detected language of the user\'s message: "en" or "fr".'
+)
+
 _TOOLS = types.Tool(function_declarations=[
 
     types.FunctionDeclaration(
@@ -53,11 +58,10 @@ _TOOLS = types.Tool(function_declarations=[
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
-                "top_n": types.Schema(
-                    type=types.Type.INTEGER,
-                    description="Number of riders to show. Default 10."
-                )
-            }
+                "top_n": types.Schema(type=types.Type.INTEGER, description="Number of riders to show. Default 10."),
+                "language": _LANG_PARAM,
+            },
+            required=["language"]
         )
     ),
 
@@ -72,12 +76,10 @@ _TOOLS = types.Tool(function_declarations=[
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
-                "athlete_name": types.Schema(
-                    type=types.Type.STRING,
-                    description="Full name or partial name of the athlete."
-                )
+                "athlete_name": types.Schema(type=types.Type.STRING, description="Full name or partial name of the athlete."),
+                "language": _LANG_PARAM,
             },
-            required=["athlete_name"]
+            required=["athlete_name", "language"]
         )
     ),
 
@@ -93,11 +95,10 @@ _TOOLS = types.Tool(function_declarations=[
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
-                "limit": types.Schema(
-                    type=types.Type.INTEGER,
-                    description="Max number of candidates. Default 8."
-                )
-            }
+                "limit": types.Schema(type=types.Type.INTEGER, description="Max number of candidates. Default 8."),
+                "language": _LANG_PARAM,
+            },
+            required=["language"]
         )
     ),
 
@@ -111,11 +112,10 @@ _TOOLS = types.Tool(function_declarations=[
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
-                "type": types.Schema(
-                    type=types.Type.STRING,
-                    description="'service' for full service alerts, 'chain' for chain-only. Default 'service'."
-                )
-            }
+                "type": types.Schema(type=types.Type.STRING, description="'service' or 'chain'. Default 'service'."),
+                "language": _LANG_PARAM,
+            },
+            required=["language"]
         )
     ),
 
@@ -124,43 +124,44 @@ _TOOLS = types.Tool(function_declarations=[
         description=(
             "List regular event attendees who have gone quiet recently — "
             "attended at least 5 events historically but absent for 6+ weeks. "
-            "Shows attendance rate (events attended / total events since joining) "
-            "and weeks since last appearance. "
             "Use for: 'at risk', 'who disappeared', 'inactive', 'ghost', 'missing members', "
             "'qui a disparu', 'inactifs', 'regulars gone quiet', 'retention'."
         ),
         parameters=types.Schema(
             type=types.Type.OBJECT,
-            properties={}
+            properties={"language": _LANG_PARAM},
+            required=["language"]
         )
     ),
 
     types.FunctionDeclaration(
         name="get_weekend_priorities",
         description=(
-            "Returns the single top upgrade candidate and top service candidate "
-            "for the owner to contact this weekend. Includes a suggested opening "
-            "question for each in French. "
+            "Returns the top upgrade candidate and top service candidate for this weekend. "
             "Use for: 'who should I talk to', 'qui contacter ce weekend', "
             "'priorities', 'who to call', 'act this weekend', 'what should I do'."
         ),
-        parameters=types.Schema(type=types.Type.OBJECT, properties={})
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={"language": _LANG_PARAM},
+            required=["language"]
+        )
     ),
 
     types.FunctionDeclaration(
         name="get_potential_recruits",
         description=(
             "Serious Strava followers who ride a lot but have NEVER attended a club event. "
-            "Invitation targets — solo riders worth personally inviting to a group ride. "
             "Use for: 'potential members', 'recruit', 'solo riders', 'who should join us', "
             "'who rides alone', 'invite candidates', 'new members', 'qui devrait nous rejoindre'."
         ),
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
-                "limit": types.Schema(type=types.Type.INTEGER,
-                                      description="Max results. Default 10.")
-            }
+                "limit": types.Schema(type=types.Type.INTEGER, description="Max results. Default 10."),
+                "language": _LANG_PARAM,
+            },
+            required=["language"]
         )
     ),
 
@@ -174,7 +175,8 @@ _TOOLS = types.Tool(function_declarations=[
         ),
         parameters=types.Schema(
             type=types.Type.OBJECT,
-            properties={}
+            properties={"language": _LANG_PARAM},
+            required=["language"]
         )
     ),
 
@@ -189,12 +191,10 @@ _TOOLS = types.Tool(function_declarations=[
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
-                "athlete_name": types.Schema(
-                    type=types.Type.STRING,
-                    description="Full name or partial name of the athlete."
-                )
+                "athlete_name": types.Schema(type=types.Type.STRING, description="Full name or partial name of the athlete."),
+                "language": _LANG_PARAM,
             },
-            required=["athlete_name"]
+            required=["athlete_name", "language"]
         )
     ),
 
@@ -202,17 +202,16 @@ _TOOLS = types.Tool(function_declarations=[
         name="get_loyal_members",
         description=(
             "Top community members by events attended — still actively showing up. "
-            "Shows rides together, 2026 km, and bike. Useful for identifying community "
-            "leaders and promotional sales targets. "
             "Use for: 'loyal', 'top members', 'best attendees', 'community leaders', "
             "'most active members', 'who comes most'."
         ),
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
-                "limit": types.Schema(type=types.Type.INTEGER,
-                                      description="Max results. Default 10.")
-            }
+                "limit": types.Schema(type=types.Type.INTEGER, description="Max results. Default 10."),
+                "language": _LANG_PARAM,
+            },
+            required=["language"]
         )
     ),
 
@@ -220,12 +219,14 @@ _TOOLS = types.Tool(function_declarations=[
         name="get_missed_upgrades",
         description=(
             "Show athletes who recently upgraded to a higher-tier bike — not through the shop. "
-            "Detects new high-tier bikes with low km compared to older bikes in the same garage. "
-            "Estimates purchase month using seasonal riding patterns. "
             "Use for: 'missed opportunity', 'missed upgrades', 'who upgraded elsewhere', "
             "'external upgrades', 'opportunités manquées', 'qui a upgradé sans nous'."
         ),
-        parameters=types.Schema(type=types.Type.OBJECT, properties={})
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={"language": _LANG_PARAM},
+            required=["language"]
+        )
     ),
 
     types.FunctionDeclaration(
@@ -238,7 +239,11 @@ _TOOLS = types.Tool(function_declarations=[
             "'list members', 'how many members', 'complete list', or any request "
             "for a raw member list — there is no tool for that."
         ),
-        parameters=types.Schema(type=types.Type.OBJECT, properties={})
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={"language": _LANG_PARAM},
+            required=["language"]
+        )
     ),
 
 ])
@@ -246,6 +251,7 @@ _TOOLS = types.Tool(function_declarations=[
 _ROUTING_SYSTEM = """You are ClubRide.Ai, assistant for TNCE cycling club owner Aleksei in Lausanne.
 
 Always call exactly one tool. Never answer directly.
+Always include the `language` argument: "fr" if the message is in French, "en" otherwise.
 
 Tool selection rules (apply in order, stop at first match):
 1. Asks to draft/write/message to a person by name → draft_message
@@ -1227,29 +1233,6 @@ def handle(message: str, owner_id: str,
         add_turn(owner_id, message, reply)
         return reply
 
-    # ── Auto language detection — switch silently based on message language ────
-    _FR_WORDS = re.compile(
-        r'\b(bonjour|salut|merci|oui|non|dis.moi|qui est|classement|pour|avec|'
-        r'les|des|une|est|pas|ça|voici|prochains|sorties|vélo|velo|cycliste|'
-        r'membres|fidèle|semaine|upgrade|rapport|briefing\s+fr|quelle|quels|'
-        r'combien|comment|pourquoi|montre|donne|fais|liste)\b',
-        re.IGNORECASE
-    )
-    _EN_WORDS = re.compile(
-        r'\b(hello|hi|hey|thanks|yes|no|tell|who|show|give|make|list|what|'
-        r'how|why|which|riders|members|leaderboard|service|upgrade|recruit|'
-        r'briefing|draft|profile)\b',
-        re.IGNORECASE
-    )
-    _fr_score = len(_FR_WORDS.findall(message))
-    _en_score = len(_EN_WORDS.findall(message))
-    if _fr_score > _en_score and lang != "fr":
-        set_lang(owner_id, "fr")
-        lang = "fr"
-    elif _en_score > _fr_score and lang != "en":
-        set_lang(owner_id, "en")
-        lang = "en"
-
     # Feedback reply (1-4 digit)
     if re.match(r"^\s*[1-4]\s*$", message.strip()):
         action_map = {"1": "done", "2": "contacted", "3": "snoozed", "4": "ignored"}
@@ -1395,6 +1378,12 @@ def handle(message: str, owner_id: str,
             if raw_args != args:
                 print(f"  Gemini got: {fn.name}({raw_args})")
                 print(f"  Resolved  : {fn.name}({args})")
+            # Extract and persist language detected by Gemini
+            detected_lang = args.pop("language", None)
+            if detected_lang in ("en", "fr") and detected_lang != lang:
+                set_lang(owner_id, detected_lang)
+                lang = detected_lang
+                print(f"  Lang → {lang} (Gemini detected)")
             try:
                 reply = _execute_tool(fn.name, args, club_id, message, history, lang=lang, owner_id=owner_id)
             except Exception:
