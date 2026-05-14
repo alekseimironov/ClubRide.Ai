@@ -763,11 +763,12 @@ def get_missed_upgrades(club_id: int,
         if not in_community:
             continue
 
-        # Trainer/generic name blacklist — excluded regardless of classification
+        # Trainer/generic name blacklist — checked against both raw name and display_name
         _BLACKLIST = ("tacx", "wahoo", "zwift", "fixie", "fixed", "trainer",
                       "race bike", "my bike", "road bike", "gravel bike",
                       "brompton", "folding", "commuter", "urban", "coffee",
-                      "city bike", "cargo")
+                      "city bike", "cargo", "track bike", "tt bike",
+                      "time trial", "triathlon")
 
         # Classify all bikes — road only, known tier only, no indoor/MTB/custom names
         classified = []
@@ -776,12 +777,14 @@ def get_missed_upgrades(club_id: int,
             bkm   = float(row["Bike_Km"])
             if bkm <= 0:
                 continue
-            if any(bl in bname.lower() for bl in _BLACKLIST):
-                continue
             cls          = classif_map.get(bname.lower(), {})
             tier         = cls.get("tier", "unknown")
             category     = cls.get("category", "unknown")
             display_name = cls.get("display_name", bname)
+            # Check blacklist against BOTH raw name and display_name
+            check_str = f"{bname.lower()} {display_name.lower()}"
+            if any(bl in check_str for bl in _BLACKLIST):
+                continue
             # Only road bikes with a known tier — excludes indoor, MTB, custom nicknames
             if category != "road" or tier == "unknown":
                 continue
@@ -805,20 +808,25 @@ def get_missed_upgrades(club_id: int,
 
         top_bikes = [b for b in classified if b["tier_rank"] == best_tier_rank]
 
+        # Highest-km reference for the "recently bought" threshold
+        max_other_km = max(b["km"] for b in classified)
+
         confirmed = False
         active_name = active_bike_map.get(aid, "").lower()
         if active_name:
-            # Try to match Active_Bike name against classified bikes
+            # Accept Active_Bike as current only if it's a recently bought bike
+            # (low km = new purchase). Reject if it's the old high-km workhorse.
             active_match = next(
                 (b for b in classified if active_name in b["name"].lower()
                  or b["name"].lower() in active_name), None
             )
-            if active_match:
+            if active_match and active_match["km"] / max_other_km <= new_bike_ratio:
                 new_bike  = active_match
                 confirmed = True
 
         if not confirmed:
-            new_bike = top_bikes[0]  # garage order fallback
+            # Fallback: first highest-tier bike by garage order (Strava = last used)
+            new_bike = top_bikes[0]
 
         # Reference = highest-km road bike that is not the current bike
         others     = [b for b in classified if b["name"] != new_bike["name"]]

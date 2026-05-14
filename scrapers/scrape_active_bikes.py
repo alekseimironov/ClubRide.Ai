@@ -58,46 +58,54 @@ def goto_with_retry(page, url: str, retries: int = 3) -> bool:
 
 def get_active_bike(page, athlete_id: str) -> tuple[str, str]:
     """
-    Returns (bike_name, activity_url) from the athlete's latest activity.
+    Returns (bike_name, activity_url) from the athlete's most recent CYCLING activity.
+    Tries up to 5 recent activities to find one that has a bike recorded.
     """
     if not goto_with_retry(page, f"https://www.strava.com/athletes/{athlete_id}"):
         return "", ""
     time.sleep(1.5)
 
-    # Find first activity link
-    activity_url = ""
+    # Collect up to 5 recent activity links
+    activity_urls = []
     try:
         links = page.query_selector_all("a[href*='/activities/']")
         for link in links:
             href = link.get_attribute("href") or ""
             if re.search(r"/activities/\d+$", href):
-                activity_url = (f"https://www.strava.com{href}"
-                                if href.startswith("/") else href)
+                url = f"https://www.strava.com{href}" if href.startswith("/") else href
+                if url not in activity_urls:
+                    activity_urls.append(url)
+            if len(activity_urls) >= 5:
                 break
     except Exception:
         pass
 
-    if not activity_url:
+    if not activity_urls:
         return "", ""
 
-    # Load activity page
-    try:
-        if not goto_with_retry(page, activity_url):
-            return "", activity_url
-        time.sleep(1)
+    # Visit each activity until we find one with a bike (= cycling activity)
+    for activity_url in activity_urls:
+        try:
+            if not goto_with_retry(page, activity_url, retries=2):
+                continue
+            time.sleep(1)
 
-        body  = page.inner_text("body")
-        lines = [l.strip() for l in body.split("\n") if l.strip()]
+            body  = page.inner_text("body")
+            lines = [l.strip() for l in body.split("\n") if l.strip()]
 
-        for line in lines:
-            m = re.match(r"^Bike:\s*(.+)", line, re.IGNORECASE)
-            if m:
-                return m.group(1).strip(), activity_url
+            for line in lines:
+                m = re.match(r"^Bike:\s*(.+)", line, re.IGNORECASE)
+                if m:
+                    return m.group(1).strip(), activity_url
 
-    except Exception as e:
-        print(f"  ⚠️  Activity page error: {e}")
+            # No bike found on this activity — it's a run/swim/etc, try next
+            time.sleep(random.uniform(3, 5))
 
-    return "", activity_url
+        except Exception as e:
+            print(f"  ⚠️  Activity page error: {e}")
+            continue
+
+    return "", activity_urls[0] if activity_urls else ""
 
 
 def save_batch(rows: list[dict]):
