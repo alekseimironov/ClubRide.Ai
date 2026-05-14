@@ -1,14 +1,16 @@
 """
 scrapers/classify_bikes_llm.py
 Uses Gemini Flash to classify each unique bike as:
-  category: road | gravel | mtb | indoor | unknown
-  tier:     entry | mid | top | null  (null for non-road)
+  category:     road | gravel | mtb | indoor | unknown
+  tier:         entry | mid | top | null  (null for non-road)
+  display_name: clean human-readable name for bot output
 
-Reads:  data/real/athlete_bikes.csv      (339 unique bikes)
+Reads:  data/real/athlete_bikes.csv
 Cache:  data/synthetic/bike_classifications.json  (skip already done)
 Output: data/synthetic/bike_classifications.json  (appended)
 
 Run once — re-run is safe, skips already-classified bikes.
+Entries without display_name are re-classified automatically.
 Run: python scrapers/classify_bikes_llm.py
 """
 
@@ -32,37 +34,52 @@ load_dotenv(ROOT / ".env")
 SYSTEM_PROMPT = """You are a cycling expert. Classify each bike entry.
 
 For each bike return:
-  category: "road" | "gravel" | "mtb" | "indoor" | "unknown"
-  tier:     "entry" | "mid" | "top"
+  category:     "road" | "gravel" | "mtb" | "indoor" | "unknown"
+  tier:         "entry" | "mid" | "top"
+  display_name: clean human-readable name for bot output (see rules below)
 
 Tier is ALWAYS required — assign based on brand/model quality regardless of category.
 A top-tier gravel bike is still "top". A cheap MTB is still "entry".
 
-Tier definitions (based on equivalent market value and brand position):
-  top   — pro-grade, flagship model, typically >€3000 new
-          (Pinarello Dogma, S-Works, Canyon Aeroad CF SLX, OPEN WI.DE/MIN.D,
+Tier definitions:
+  top   — pro-grade, flagship, typically >€3000 new
+          (Pinarello Dogma, S-Works, Canyon Aeroad CF SLX, OPEN WI.DE,
            Colnago V3RS, Cervélo R5, Look 795, BMC SLR01, Specialized Aethos…)
   mid   — quality carbon or high-end alloy, €1200–3000
           (Canyon Endurace CF, Tarmac SL7, Trek Emonda SL, BMC Roadmachine,
            Scott Addict, Giant TCR Advanced, Orbea Orca, Bianchi Infinito…)
   entry — alloy or budget carbon, <€1200
-          (Specialized Allez E5, Trek Domane AL, Decathlon Van Rysel, CAAD13,
-           basic MTB, entry gravel…)
+          (Specialized Allez E5, Trek Domane AL, Decathlon Van Rysel, CAAD13…)
 
 Category rules:
-- Trainers, Zwift, Tacx, Wahoo Kickr → category=indoor
-- MTB, VTT, Scalpel, Stumpjumper, Genius, Scale → category=mtb
-- Gravel bikes (Grizl, Grail, Aspero, Topstone, Inflite, gravel in name) → category=gravel
-- Everything else → category=road (default) or category=unknown if unrecognisable nickname
+- Trainers, Zwift, Tacx, Wahoo → category=indoor
+- MTB, VTT, Scalpel, Stumpjumper, Scale → category=mtb
+- Gravel bikes (Grizl, Grail, Aspero, Topstone, gravel in name) → category=gravel
+- Everything else → road or unknown if unrecognisable nickname
 
-Brand-only entries (no model name): use brand reputation.
+Brand-only entries: use brand reputation.
   Canyon → road, mid. OPEN → road, top. Pinarello → road, top.
   Bianchi → road, mid. Scott → road, mid. BMC → road, mid.
-  Centurion → road, entry. Decathlon/Btwin → road, entry.
+
+display_name rules:
+  1. Recognised brand + model → clean standard name, fix caps/spacing
+     "specialized tarmac sl7 comp" → "Specialized Tarmac SL7 Comp"
+     "LOOK 795 blade rs" → "Look 795 Blade RS"
+  2. Brand only → just the brand name
+     "Canyon" → "Canyon"
+  3. Custom nickname (person name, animal, Italian/foreign word, city, etc.)
+     → describe bike type + append " · custom name"
+     "LaPiovra Track" → "Track bike · custom name"
+     "Jerry" → "Road bike · custom name"
+     "Satan" → "Road bike · custom name"
+  4. Unclear abbreviation → best guess at full name
+     "Van" → "Van Rysel"
+     "CAAD13 105" → "Cannondale CAAD13 105"
 
 Return a JSON array, one object per bike:
 [
-  {"brand": "Bianchi", "name": "Bianchi gravel", "category": "gravel", "tier": "mid"},
+  {"brand": "Bianchi", "name": "Bianchi gravel", "category": "gravel", "tier": "mid", "display_name": "Bianchi Gravel"},
+  {"brand": "Jerry", "name": "Jerry", "category": "road", "tier": "entry", "display_name": "Road bike · custom name"},
   ...
 ]
 Only return the JSON array, no markdown, no explanation.
@@ -136,7 +153,8 @@ def run():
     cache   = load_cache()
     pending = [
         row for _, row in unique.iterrows()
-        if _cache_key(str(row["brand"]), str(row["name"])) not in cache
+        if (_cache_key(str(row["brand"]), str(row["name"])) not in cache
+            or "display_name" not in cache[_cache_key(str(row["brand"]), str(row["name"]))])
     ]
 
     print(f"  Total unique bikes   : {len(unique)}")
@@ -163,10 +181,11 @@ def run():
             for res in results:
                 key = _cache_key(res.get("brand",""), res.get("name",""))
                 cache[key] = {
-                    "brand":    res.get("brand", ""),
-                    "name":     res.get("name", ""),
-                    "category": res.get("category", "unknown"),
-                    "tier":     res.get("tier"),
+                    "brand":        res.get("brand", ""),
+                    "name":         res.get("name", ""),
+                    "category":     res.get("category", "unknown"),
+                    "tier":         res.get("tier"),
+                    "display_name": res.get("display_name", res.get("name", "")),
                 }
             classified += len(results)
             save_cache(cache)

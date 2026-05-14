@@ -754,7 +754,8 @@ def get_missed_upgrades(club_id: int,
 
         # Trainer/generic name blacklist — excluded regardless of classification
         _BLACKLIST = ("tacx", "wahoo", "zwift", "fixie", "fixed", "trainer",
-                      "race bike", "my bike", "road bike", "gravel bike")
+                      "race bike", "my bike", "road bike", "gravel bike",
+                      "brompton", "folding")
 
         # Classify all bikes — road only, known tier only, no indoor/MTB/custom names
         classified = []
@@ -765,17 +766,19 @@ def get_missed_upgrades(club_id: int,
                 continue
             if any(bl in bname.lower() for bl in _BLACKLIST):
                 continue
-            cls      = classif_map.get(bname.lower(), {})
-            tier     = cls.get("tier", "unknown")
-            category = cls.get("category", "unknown")
+            cls          = classif_map.get(bname.lower(), {})
+            tier         = cls.get("tier", "unknown")
+            category     = cls.get("category", "unknown")
+            display_name = cls.get("display_name", bname)
             # Only road bikes with a known tier — excludes indoor, MTB, custom nicknames
             if category != "road" or tier == "unknown":
                 continue
             classified.append({
-                "name":      bname,
-                "km":        bkm,
-                "tier":      tier,
-                "tier_rank": TIER_RANK.get(tier, 0),
+                "name":         bname,
+                "display_name": display_name,
+                "km":           bkm,
+                "tier":         tier,
+                "tier_rank":    TIER_RANK.get(tier, 0),
             })
 
         if len(classified) < 2:
@@ -799,6 +802,10 @@ def get_missed_upgrades(club_id: int,
         ref_km = old_bike["km"]
         new_km = new_bike["km"]
 
+        # Skip if reference bike is a custom name — no meaningful upgrade context
+        if "custom name" in old_bike.get("display_name", "").lower():
+            continue
+
         # Apply thresholds
         if ref_km < min_ref_km:
             continue
@@ -814,11 +821,11 @@ def get_missed_upgrades(club_id: int,
         results.append({
             "name":           name,
             "weekly_km":      round(weekly_km, 0),
-            "new_bike":       new_bike["name"],
+            "new_bike":       new_bike.get("display_name", new_bike["name"]),
             "new_tier":       new_bike["tier"],
             "new_km":         round(new_km, 0),
             "purchase_month": purchase_month,
-            "old_bike":       old_bike["name"],
+            "old_bike":       old_bike.get("display_name", old_bike["name"]),
             "old_tier":       old_bike["tier"],
             "old_km":         round(ref_km, 0),
         })
