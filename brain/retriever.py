@@ -755,7 +755,8 @@ def get_missed_upgrades(club_id: int,
         # Trainer/generic name blacklist — excluded regardless of classification
         _BLACKLIST = ("tacx", "wahoo", "zwift", "fixie", "fixed", "trainer",
                       "race bike", "my bike", "road bike", "gravel bike",
-                      "brompton", "folding")
+                      "brompton", "folding", "commuter", "urban", "coffee",
+                      "city bike", "cargo")
 
         # Classify all bikes — road only, known tier only, no indoor/MTB/custom names
         classified = []
@@ -817,6 +818,17 @@ def get_missed_upgrades(club_id: int,
 
         weekly_km      = float(profile.get("Weekly_km") or 60)
         purchase_month = estimate_purchase_month(new_km, weekly_km)
+
+        # Skip upgrades older than 12 months — no longer actionable
+        if purchase_month == "2+ years ago":
+            continue
+        try:
+            pm_date = date(int(purchase_month[-4:]),
+                           list(_cal.month_abbr).index(purchase_month[:3]), 1)
+            if pm_date < date.today().replace(month=1, day=1) - timedelta(days=365):
+                continue
+        except Exception:
+            pass
 
         results.append({
             "name":           name,
