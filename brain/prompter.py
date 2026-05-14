@@ -959,9 +959,11 @@ def _fmt_briefing(club_id: int, lang: str = "en") -> str:
         return f"• {m['name']} — {t('loyal_rides', lang, n=m['events'])}{yr}{bk}"
 
     def _row_upgrade(c):
-        bike = c.get("display_bike") or c.get("primary_bike") or t("upg_bike_unk", lang)
-        bike = t("upg_bike_unk", lang) if bike in ("nan", "unknown", "") else bike
-        return f"• {c['name']} — {t('upg_km_wk', lang, wk=c['weekly_km'])} · {bike}"
+        bike    = c.get("display_bike") or c.get("primary_bike") or t("upg_bike_unk", lang)
+        bike    = t("upg_bike_unk", lang) if bike in ("nan", "unknown", "") else bike
+        bkm     = float(c.get("display_bike_km") or c.get("primary_bike_km") or 0)
+        km_str  = f" · {t('upg_km_on_bike', lang, km=bkm)}" if bkm > 0 else ""
+        return f"• {c['name']} — {t('upg_km_wk', lang, wk=c['weekly_km'])} · {bike}{km_str}"
 
     def _row_service(a):
         km   = float(a.get("Km_Since_Service", 0) or 0)
