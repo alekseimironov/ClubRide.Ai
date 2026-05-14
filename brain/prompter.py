@@ -962,7 +962,7 @@ def _fmt_briefing(club_id: int, lang: str = "en") -> str:
         bike    = c.get("display_bike") or c.get("primary_bike") or t("upg_bike_unk", lang)
         bike    = t("upg_bike_unk", lang) if bike in ("nan", "unknown", "") else bike
         bkm     = float(c.get("display_bike_km") or c.get("primary_bike_km") or 0)
-        km_str  = f" · {t('upg_km_on_bike', lang, km=bkm)}" if bkm > 0 else ""
+        km_str  = f" · {bkm:,.0f}km" if bkm > 0 else ""
         return f"• {c['name']} — {t('upg_km_wk', lang, wk=c['weekly_km'])} · {bike}{km_str}"
 
     def _row_service(a):
