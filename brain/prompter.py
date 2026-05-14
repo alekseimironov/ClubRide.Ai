@@ -959,7 +959,7 @@ def _fmt_briefing(club_id: int, lang: str = "en") -> str:
         return f"• {m['name']} — {t('loyal_rides', lang, n=m['events'])}{yr}{bk}"
 
     def _row_upgrade(c):
-        bike = c.get("primary_bike") or t("upg_bike_unk", lang)
+        bike = c.get("display_bike") or c.get("primary_bike") or t("upg_bike_unk", lang)
         bike = t("upg_bike_unk", lang) if bike in ("nan", "unknown", "") else bike
         return f"• {c['name']} — {t('upg_km_wk', lang, wk=c['weekly_km'])} · {bike}"
 
@@ -1049,12 +1049,16 @@ def _handle_athlete(club_id: int, athlete_name: str,
     speed    = float(p.get("avg_speed", 0) or 0)
     longest  = float(p.get("longest_ride", 0) or 0)
     rtier    = p.get("rider_tier", "unknown")
-    bike     = p.get("primary_bike") or ""
-    bike     = "" if bike in ("nan", "unknown") else bike
-    btier    = p.get("primary_tier", "")
-    btier    = "" if btier in ("nan", "unknown") else btier
-    bike_km  = float(p.get("primary_bike_km", 0) or 0)
     fleet_km = float(p.get("fleet_km", 0) or 0)
+
+    # Use recently-bought bike if available — lower km = newer purchase
+    # Falls back to primary_bike (highest-scoring) when no recent upgrade detected
+    disp_bike    = p.get("display_bike") or p.get("primary_bike") or ""
+    disp_bike_km = float(p.get("display_bike_km") or p.get("primary_bike_km", 0) or 0)
+    bike     = disp_bike if disp_bike not in ("nan", "unknown", "") else ""
+    btier    = p.get("display_bike_tier") or p.get("primary_tier", "")
+    btier    = "" if btier in ("nan", "unknown") else btier
+    bike_km  = disp_bike_km
     svc_due  = p.get("service_due", False)
     chn_due  = p.get("chain_due", False)
     svc_km   = float(p.get("km_since_service", 0) or 0)

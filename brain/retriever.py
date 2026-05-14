@@ -474,25 +474,77 @@ def get_athlete_profile(club_id: int, athlete_name: str) -> dict:
     if not prof_df.empty:
         mask = _match_athlete(athlete_name, prof_df["Name"])
         if mask.any():
-            row = prof_df[mask].iloc[0]
+            row    = prof_df[mask].iloc[0]
+            aid    = str(row.get("Athlete_ID", ""))
+            pb_km  = float(row.get("primary_bike_km") or 0)
+            fl_km  = float(row.get("fleet_km") or 0)
+            # Find recently-bought bike: lowest-km top-tier non-custom road bike
+            # with km < 35% of highest-km other bike → likely a new purchase
+            disp_bike = disp_bike_km = disp_bike_tier = None
+            _import_json = __import__("json")
+            _classif_local: dict = {}
+            try:
+                _cp = ROOT / "data" / "synthetic" / "bike_classifications.json"
+                with open(_cp, encoding="utf-8") as _cf:
+                    for _c in _import_json.load(_cf):
+                        _classif_local[_c["name"].lower()] = _c
+            except Exception:
+                pass
+            _bikes_df = _load_csv(p["bikes"])
+            if not _bikes_df.empty and aid:
+                _bikes_df = _bikes_df.copy()
+                _bikes_df["Bike_Km"] = pd.to_numeric(_bikes_df["Bike_Km"], errors="coerce").fillna(0)
+                _ab = _bikes_df[_bikes_df["Athlete_ID"].astype(str) == aid]
+                TIER_RANK = {"top": 3, "mid": 2, "entry": 1, "unknown": 0}
+                _BL = ("tacx","wahoo","zwift","fixie","fixed","trainer","race bike",
+                       "commuter","urban","coffee","city bike","track bike","tt bike",
+                       "time trial","triathlon","brompton","folding")
+                _classified = []
+                for _, _br in _ab.iterrows():
+                    _bn = str(_br["Bike_Name"]); _bkm = float(_br["Bike_Km"])
+                    if _bkm <= 0: continue
+                    _cls = _classif_local.get(_bn.lower(), {})
+                    _dn  = _cls.get("display_name", _bn)
+                    _cat = _cls.get("category", "unknown")
+                    _tier= _cls.get("tier", "unknown")
+                    if _cat in ("mtb","indoor"): continue
+                    if any(_b in f"{_bn.lower()} {_dn.lower()}" for _b in _BL): continue
+                    if _cat != "road" or _tier == "unknown": continue
+                    _classified.append({"name": _bn, "dn": _dn, "km": _bkm,
+                                        "tier": _tier, "rank": TIER_RANK.get(_tier, 0)})
+                if len(_classified) >= 2:
+                    _max_km  = max(b["km"] for b in _classified)
+                    _best_rk = max(b["rank"] for b in _classified)
+                    _top     = [b for b in _classified if b["rank"] == _best_rk]
+                    _new     = _top[0]  # first by garage order = last used
+                    _others  = [b for b in _classified if b["name"] != _new["name"]]
+                    if _others:
+                        _old = max(_others, key=lambda b: b["km"])
+                        if (_old["km"] > 2000 and _new["km"] / _old["km"] <= 0.35):
+                            disp_bike      = _new["dn"]
+                            disp_bike_km   = _new["km"]
+                            disp_bike_tier = _new["tier"]
             result.update({
-                "found":         True,
-                "data_quality":  "full",
-                "name":          str(row.get("Name", "")),
-                "location":      str(row.get("Location", "")),
-                "weekly_km":     float(row.get("Weekly_km") or 0),
-                "alltime_km":    float(row.get("AllTime_km") or 0),
-                "curr_year_km":  float(row.get("CurrYear_km") or 0),
-                "avg_speed":     float(row.get("Avg_Speed_kmh") or 0),
-                "longest_ride":  float(row.get("Longest_Ride_km") or 0),
-                "rider_tier":    str(row.get("rider_tier", "unknown")),
-                "primary_bike":  str(row.get("primary_bike", "")),
-                "primary_brand": str(row.get("primary_brand", "")),
+                "found":           True,
+                "data_quality":    "full",
+                "name":            str(row.get("Name", "")),
+                "location":        str(row.get("Location", "")),
+                "weekly_km":       float(row.get("Weekly_km") or 0),
+                "alltime_km":      float(row.get("AllTime_km") or 0),
+                "curr_year_km":    float(row.get("CurrYear_km") or 0),
+                "avg_speed":       float(row.get("Avg_Speed_kmh") or 0),
+                "longest_ride":    float(row.get("Longest_Ride_km") or 0),
+                "rider_tier":      str(row.get("rider_tier", "unknown")),
+                "primary_bike":    str(row.get("primary_bike", "")),
+                "primary_brand":   str(row.get("primary_brand", "")),
                 "primary_tier":    str(row.get("primary_tier", "unknown")),
                 "primary_cat":     str(row.get("primary_cat", "")),
-                "primary_bike_km": float(row.get("primary_bike_km") or 0),
-                "fleet_km":        float(row.get("fleet_km") or 0),
+                "primary_bike_km": pb_km,
+                "fleet_km":        fl_km,
                 "bike_count":      int(float(row.get("bike_count") or 0)),
+                "display_bike":      disp_bike,
+                "display_bike_km":   disp_bike_km,
+                "display_bike_tier": disp_bike_tier,
             })
 
     # 2 — attendance enrichment (events count, first/last seen)
