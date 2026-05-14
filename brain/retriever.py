@@ -665,7 +665,7 @@ def get_upgrade_candidates(club_id: int, limit: int = 10) -> dict:
 
 # ── Missed upgrades ────────────────────────────────
 def get_missed_upgrades(club_id: int,
-                        new_bike_ratio: float = 0.25,
+                        new_bike_ratio: float = 0.35,
                         min_ref_km: float = 2000.0,
                         limit: int = 15) -> dict:
     """
@@ -752,15 +752,25 @@ def get_missed_upgrades(club_id: int,
         if not in_community:
             continue
 
-        # Classify all bikes with km > 0
+        # Trainer/generic name blacklist — excluded regardless of classification
+        _BLACKLIST = ("tacx", "wahoo", "zwift", "fixie", "fixed", "trainer",
+                      "race bike", "my bike", "road bike", "gravel bike")
+
+        # Classify all bikes — road only, known tier only, no indoor/MTB/custom names
         classified = []
         for _, row in group.iterrows():
             bname = str(row["Bike_Name"])
             bkm   = float(row["Bike_Km"])
             if bkm <= 0:
                 continue
-            cls  = classif_map.get(bname.lower(), {})
-            tier = cls.get("tier", "unknown")
+            if any(bl in bname.lower() for bl in _BLACKLIST):
+                continue
+            cls      = classif_map.get(bname.lower(), {})
+            tier     = cls.get("tier", "unknown")
+            category = cls.get("category", "unknown")
+            # Only road bikes with a known tier — excludes indoor, MTB, custom nicknames
+            if category != "road" or tier == "unknown":
+                continue
             classified.append({
                 "name":      bname,
                 "km":        bkm,
@@ -794,8 +804,8 @@ def get_missed_upgrades(club_id: int,
             continue
         if new_km / ref_km > new_bike_ratio:
             continue
-        # New bike must be higher tier than old bike (genuine upgrade)
-        if new_bike["tier_rank"] <= old_bike["tier_rank"]:
+        # New bike must be same or higher tier — exclude downgrades only
+        if new_bike["tier_rank"] < old_bike["tier_rank"]:
             continue
 
         weekly_km      = float(profile.get("Weekly_km") or 60)
