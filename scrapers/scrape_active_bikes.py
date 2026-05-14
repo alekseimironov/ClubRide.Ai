@@ -46,10 +46,11 @@ def already_done() -> set:
 def goto_with_retry(page, url: str, retries: int = 3) -> bool:
     for attempt in range(1, retries + 1):
         try:
-            page.goto(url, timeout=45000, wait_until="load")
+            page.goto(url, timeout=45000, wait_until="domcontentloaded")
+            time.sleep(2.5)
             return True
         except Exception:
-            wait = 15 * attempt   # 15s, 30s, 45s — gives Strava time to recover
+            wait = 15 * attempt
             print(f"  ⚠️  Attempt {attempt}/{retries} failed — waiting {wait}s")
             if attempt < retries:
                 time.sleep(wait)
@@ -63,7 +64,7 @@ def get_active_bike(page, athlete_id: str) -> tuple[str, str]:
     """
     if not goto_with_retry(page, f"https://www.strava.com/athletes/{athlete_id}"):
         return "", ""
-    time.sleep(1.5)
+    time.sleep(2)
 
     # Collect up to 5 recent activity links
     activity_urls = []
